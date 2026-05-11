@@ -1,0 +1,149 @@
+services:
+  nginx:
+    container_name: nginx
+    build:
+      context: .
+      dockerfile: ./docker/nginx/Dockerfile
+    image: nginx:nginx-app
+    ports:
+      - "80:80"
+    volumes:
+      - "./frontend/www/dist:/var/www/html"
+      - "./environment/nginx.conf:/etc/nginx/nginx.conf:ro"
+      - "./logs:/var/www/logs"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        touch /var/www/logs/access.log /var/www/logs/error.log 
+        chown -R dev:dev /var/www/logs /var/www/html
+        exec nginx -g 'daemon off;'
+
+    networks:
+      - backend
+  laravel:
+    container_name: laravel
+    build:
+      context: .
+      dockerfile: ./docker/laravel/Dockerfile
+    volumes:
+      - "./backend:/var/www/php"
+      - "./logs:/var/www/logs"
+      - "./environment/laravel/.env:/var/www/php/www/.env"
+
+    working_dir: /var/www/php/www
+    command:
+      - /bin/bash
+      - -c
+      - |
+        composer install
+        /usr/local/sbin/php-fpm
+    networks:
+      - backend
+  scheduler:
+    container_name: scheduler
+    build:
+      context: .
+      dockerfile: ./docker/laravel/Dockerfile
+    volumes:
+      - "./backend:/var/www/php"
+      - "./logs:/var/www/logs"
+      - "./environment/laravel/.env:/var/www/php/www/.env"
+    working_dir: /var/www/php/www
+    command:
+      - /bin/bash
+      - -c
+      - |
+        echo "スケジューラーを開始します..."
+        while true; do
+            php artisan schedule:run --verbose --no-interaction
+            sleep 60
+        done
+    depends_on:
+      - laravel
+      - mysql
+    networks:
+      - backend
+  mysql:
+    container_name: mysql
+    image: "mysql/mysql-server:8.0"
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: database
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      TZ: "Asia/Tokyo"
+    volumes:
+      - "./environment/my.cnf:/etc/my.cnf"
+      - "mysql_data:/var/lib/mysql"
+    networks:
+      - backend
+
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-p password"]
+      retries: 3
+      timeout: 5s
+  mailpit:
+    image: "axllent/mailpit:latest"
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    volumes:
+      - mailpit_data:/data
+    environment:
+      MP_MAX_MESSAGES: "1000"
+      MP_DATA_FILE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    networks:
+      - backend
+  react:
+    container_name: react
+    build:
+      context: .
+      dockerfile: ./docker/node/Dockerfile
+    image: react-app
+    ports:
+      - "5173:5173"
+      - "4173:4173"
+    volumes:
+      - "./frontend:/var/www/html"
+    working_dir: /var/www/html/www
+    command:
+      - /bin/bash
+      - -c
+      - |
+        npm ci
+        npm run dev -- --host --port 5173
+    networks:
+      - backend
+
+    # S3 互換のオブジェクトストレージを提供するためのツール
+  minio:
+    image: minio/minio:RELEASE.2023-01-06T18-11-18Z
+    command: ["server", "/data", "--console-address", ":9090"] # コンテナが起動したときに実行するコマンド
+    ports:
+      - "9000:9000"
+      - "9090:9090"
+    volumes:
+      - "minio_data:/data"
+    environment:
+      MINIO_ROOT_USER: minio_root
+      MINIO_ROOT_PASSWORD: minio_password
+    networks:
+      - backend
+
+volumes:
+  mysql_data:
+    driver: local
+  mailpit_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  backend:
+    driver: bridge

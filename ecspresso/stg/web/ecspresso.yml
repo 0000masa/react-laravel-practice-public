@@ -1,0 +1,9 @@
+region: ap-northeast-1
+cluster: practice-stg-cluster
+service: practice-stg-main-service
+task_definition: ecs-task-def.jsonnet
+service_definition: service-def.jsonnet
+plugins:
+  - name: tfstate
+    config:
+      url: s3://github-action-terraform-tf-state-bucket/practice/laravel/stg/terraform.tfstate

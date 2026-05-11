@@ -1,0 +1,61 @@
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "デプロイ先環境"
+        type: choice
+        options:
+          - stg
+          - prod
+        required: true
+        default: stg
+
+env:
+  AWS_REGION: ap-northeast-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      #  AWS 認証 (OIDC ロール)
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_S3_DEPLOY_FRONTEND_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+                  # ▼▼▼ 追加: SSMから最新のIDを取得して環境変数に入れる ▼▼▼
+      - name: Get Network Configuration from SSM
+        run: |
+          BUCKET_NAME=$(aws ssm get-parameter --name "/practice/${{ inputs.target_env }}/frontend_bucket_name" --query "Parameter.Value" --output text)
+          DISTRIBUTION_ID=$(aws ssm get-parameter --name "/practice/${{ inputs.target_env }}/cloudfront_distribution_id" --query "Parameter.Value" --output text)
+
+          echo "BUCKET_NAME=$BUCKET_NAME" >> $GITHUB_ENV
+          echo "DISTRIBUTION_ID=$DISTRIBUTION_ID" >> $GITHUB_ENV
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies and Build
+        run: |
+          cd frontend/www
+          npm ci
+          npm run build
+
+      - name: Deploy to S3
+        run: |
+          aws s3 sync ./frontend/www/dist s3://${{ env.BUCKET_NAME }} --delete
+
+      # ▼▼▼ S3配置後にCloudFrontのキャッシュを削除 ▼▼▼
+      - name: Invalidate CloudFront Cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ env.DISTRIBUTION_ID }} \
+            --paths "/*"

@@ -1,0 +1,107 @@
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "実行するアクション (plan / apply)。planはどのブランチでも実行可能。applyはprodならmain、stgならmain/developのみ実行可能。"
+        type: choice
+        options:
+          - plan
+          - apply
+        required: true
+        default: plan
+
+      target_env:
+        description: "デプロイ先環境"
+        type: choice
+        options:
+          - stg
+          - prod
+        required: true
+        default: stg
+
+      enable_nat_gateway:
+        description: "NatGatewayをつけますか？つける→true / つけない→false (stg のみ選択可。prod は常に true になります)"
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+env:
+  AWS_REGION: ap-northeast-1
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+
+    permissions:
+      id-token: write
+      contents: read
+    
+    defaults:
+      run:
+        working-directory: ./terraform/${{ inputs.target_env }}
+        
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      #  AWS 認証 (OIDC ロール)
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          # ここに providers.tf と同じバージョンを指定します
+          terraform_version: "1.14.3"
+
+      # apply 時のみブランチ制約を適用
+      # stgの場合は main か develop のブランチで実行できる
+      # prodの場合は main ブランチでしか実行できない
+      # plan はどのブランチでも実行可能
+      - name: Fail on forbidden branch
+        if: |
+          inputs.action == 'apply' && !(
+            (inputs.target_env == 'prod' && github.ref == 'refs/heads/main') ||
+            (inputs.target_env == 'stg'  && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/ecspresso'))
+          )
+        run: |
+          echo "::error::このブランチでは apply できません。"
+          exit 1
+
+      - name: Resolve NAT setting
+        id: nat
+        run: |
+          if [ "${{ inputs.target_env }}" = "prod" ]; then
+            echo "IS_ENABLE_NAT_GATEWAY=true" >> $GITHUB_ENV
+          else
+            echo "IS_ENABLE_NAT_GATEWAY=${{ inputs.enable_nat_gateway }}" >> $GITHUB_ENV
+          fi
+
+        # 初期化
+      - name: Terraform Init
+        run: terraform init
+
+      # フォーマットチェック
+      - name: Terraform Format
+        run: terraform fmt -check
+
+      # 検証
+      - name: Terraform Validate
+        run: terraform validate
+
+      # 計画
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color \
+            -var="enable_nat_gateway=${{ env.IS_ENABLE_NAT_GATEWAY }}"
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var="enable_nat_gateway=${{ env.IS_ENABLE_NAT_GATEWAY }}"

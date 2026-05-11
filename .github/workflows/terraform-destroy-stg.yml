@@ -1,0 +1,52 @@
+on:
+  workflow_dispatch:
+    inputs:
+      confirmMessage:
+        description: "本当に削除する場合は'削除'と入力してください"
+        required: true
+
+env:
+  AWS_REGION: ap-northeast-1
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    environment: stg
+
+    permissions:
+      id-token: write
+      contents: read
+    
+    defaults:
+      run:
+        working-directory: ./terraform/stg
+        
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        #  AWS 認証 (OIDC ロール)
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          # ここに providers.tf と同じバージョンを指定します
+          terraform_version: "1.14.3"
+          
+      - name: Check Confirmation Message
+        run: |
+          if [[ "${{ github.event.inputs.confirmMessage }}" != "削除" ]]; then
+            echo "エラー: 入力された文字列が '削除' ではありません。プロセスを中止します。"
+            exit 1
+          fi
+
+        # 初期化
+      - name: Terraform Init
+        run: terraform init
+
+      # 削除実行
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve -input=false

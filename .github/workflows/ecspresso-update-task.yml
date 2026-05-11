@@ -1,0 +1,98 @@
+on:
+  workflow_dispatch:
+    inputs:
+      IMAGE_TAG_NGINX:
+        description: "nginxのイメージタグ"
+        required: true
+
+      IMAGE_TAG_LARAVEL:
+        description: "Laravelのイメージタグ"
+        required: true
+
+      target_env:
+        description: "実行先環境"
+        type: choice
+        options:
+          - stg
+          - prod
+        required: true
+        default: stg
+
+env:
+  AWS_REGION: ap-northeast-1
+
+jobs:
+  deploy:
+    name: Update-ECS-Task-Definitions
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      IMAGE_TAG_NGINX: ${{ inputs.IMAGE_TAG_NGINX }}
+      IMAGE_TAG_LARAVEL: ${{ inputs.IMAGE_TAG_LARAVEL }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        id: aws-credentials
+        with:
+          role-to-assume: ${{ secrets.AWS_ECSPRESSO_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Export AWS account id
+        run: echo "AWS_ACCOUNT_ID=${{ steps.aws-credentials.outputs.aws-account-id }}" >> $GITHUB_ENV
+
+      - uses: kayac/ecspresso@v2
+        with:
+          # v2.6.3 で aws-sdk-go-v2/service/ecs v1.67.0 に更新され、
+          # ECS native blue/green デプロイ (deploymentConfiguration.strategy /
+          # bakeTimeInMinutes / loadBalancers[].advancedConfiguration) に対応した。
+          version: v2.8.3
+
+      # service-def.jsonnet 内の must_env 参照用に
+      # subnet / security group ID を SSM から取得して環境変数に書き出す。
+      - name: Fetch ECS network config from SSM
+        run: |
+          PREFIX="/practice/${{ inputs.target_env }}"
+          {
+            echo "ECS_SUBNET_A_ID=$(aws ssm get-parameter --name "$PREFIX/subnet_id_a" --query Parameter.Value --output text)"
+            echo "ECS_SUBNET_C_ID=$(aws ssm get-parameter --name "$PREFIX/subnet_id_c" --query Parameter.Value --output text)"
+            echo "ECS_SECURITY_GROUP_ID=$(aws ssm get-parameter --name "$PREFIX/security_group_id" --query Parameter.Value --output text)"
+          } >> "$GITHUB_ENV"
+
+      # 1. ランナータスク定義（db-task.yml が containerOverrides で migrate/seed/shell を切替実行）
+      - name: Verify runner
+        run: ecspresso verify --config ecspresso/${{ inputs.target_env }}/runner/ecspresso.yml
+      - name: Diff runner
+        run: ecspresso diff --config ecspresso/${{ inputs.target_env }}/runner/ecspresso.yml
+      - name: Register runner task definition
+        run: ecspresso register --config ecspresso/${{ inputs.target_env }}/runner/ecspresso.yml
+
+      # 2. バッチタスク定義（EventBridge用に最新リビジョンを作成）
+      - name: Verify batch
+        run: ecspresso verify --config ecspresso/${{ inputs.target_env }}/batch-daily-report/ecspresso.yml
+      - name: Diff batch
+        run: ecspresso diff --config ecspresso/${{ inputs.target_env }}/batch-daily-report/ecspresso.yml
+      - name: Register batch task definition
+        run: ecspresso register --config ecspresso/${{ inputs.target_env }}/batch-daily-report/ecspresso.yml
+
+      # 3. Webサービスデプロイ
+      - name: Verify web
+        run: ecspresso verify --config ecspresso/${{ inputs.target_env }}/web/ecspresso.yml
+      - name: Diff web
+        run: ecspresso diff --config ecspresso/${{ inputs.target_env }}/web/ecspresso.yml
+      - name: Deploy web service
+        run: ecspresso deploy --config ecspresso/${{ inputs.target_env }}/web/ecspresso.yml
+
+      # 4. Queue Workerデプロイ
+      - name: Verify queue worker
+        run: ecspresso verify --config ecspresso/${{ inputs.target_env }}/queue-worker/ecspresso.yml
+      - name: Diff queue worker
+        run: ecspresso diff --config ecspresso/${{ inputs.target_env }}/queue-worker/ecspresso.yml
+      - name: Deploy queue worker
+        run: ecspresso deploy --config ecspresso/${{ inputs.target_env }}/queue-worker/ecspresso.yml

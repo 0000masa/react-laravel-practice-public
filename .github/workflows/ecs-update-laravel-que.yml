@@ -1,0 +1,75 @@
+on:
+  workflow_dispatch:
+    inputs:
+      IMAGE_TAG_LARAVEL:
+        description: "Laravelのイメージタグ"
+        required: true
+
+      target_env:
+        description: "デプロイ先環境"
+        type: choice
+        options:
+          - stg
+          - prod
+        required: true
+        default: stg
+
+env:
+  AWS_REGION: ap-northeast-1
+  IMAGE_TAG_LARAVEL: ${{ inputs.IMAGE_TAG_LARAVEL }}
+  ECS_TASK_DEF: practice-${{ inputs.target_env }}-queue-worker-task
+  CONTAINER_NAME_LARAVEL: queue-worker-container
+  ECS_CLUSTER: practice-${{ inputs.target_env }}-cluster
+  ECS_SERVICE: practice-${{ inputs.target_env }}-queue-worker-service
+  ECR_REPO_LARAVEL: react-laravel-practice-laravel-ecs
+
+jobs:
+  deploy-all:
+    name: Update-ECS
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      #ソース取得
+      - uses: actions/checkout@v4
+
+      #  AWS 認証 (OIDC ロール)
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ECS_UPDATE_LARAVEL_QUEUE_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # AWS account IDを取得
+      - name: Get AWS account ID
+        id: get-account-id
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "ACCOUNT_ID=${ACCOUNT_ID}" >> $GITHUB_ENV
+
+        # 最新のタスク定義JSONをAWSからダウンロード
+      - name: Download task definition
+        run: |
+          aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEF }} \
+          --query taskDefinition > task-definition.json
+
+      # タスク定義のイメージURIを書き換え
+      - name: Render laravel container
+        id: render-laravel
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME_LARAVEL }}
+          image: ${{env.ACCOUNT_ID}}.dkr.ecr.${{env.AWS_REGION}}.amazonaws.com/${{env.ECR_REPO_LARAVEL}}:${{env.IMAGE_TAG_LARAVEL}}
+
+      # 新しいタスク定義を登録し、サービスを更新
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-laravel.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true

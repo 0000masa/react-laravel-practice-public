@@ -1,0 +1,151 @@
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "実行先環境"
+        type: choice
+        options:
+          - stg
+          - prod
+        required: true
+        default: stg
+      command_type:
+        description: "実行する処理"
+        type: choice
+        options:
+          - migrate
+          - seed
+          - shell
+        required: true
+        default: migrate
+      shell_command:
+        description: "command_type=shell の場合のみ使用 (例: php artisan migrate:status)"
+        required: false
+        default: ""
+      confirm_prod:
+        description: "prod 実行時は yes を入力"
+        required: false
+        default: ""
+
+env:
+  AWS_REGION: ap-northeast-1
+  ECS_CLUSTER: practice-${{ inputs.target_env }}-cluster
+  ECS_TASK_DEF: practice-${{ inputs.target_env }}-runner-task
+  CONTAINER_NAME: runner-container
+
+jobs:
+  run-task:
+    name: Run DB Task (${{ inputs.command_type }} on ${{ inputs.target_env }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Validate inputs
+        env:
+          TARGET_ENV: ${{ inputs.target_env }}
+          COMMAND_TYPE: ${{ inputs.command_type }}
+          SHELL_COMMAND: ${{ inputs.shell_command }}
+          CONFIRM_PROD: ${{ inputs.confirm_prod }}
+        run: |
+          set -euo pipefail
+
+          if [ "$TARGET_ENV" = "prod" ] && [ "$CONFIRM_PROD" != "yes" ]; then
+            echo "❌ prod 実行には confirm_prod=yes の入力が必須です"
+            exit 1
+          fi
+
+          if [ "$COMMAND_TYPE" = "shell" ] && [ -z "$SHELL_COMMAND" ]; then
+            echo "❌ command_type=shell では shell_command の入力が必須です"
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DB_RUNNER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Network Configuration from SSM
+        run: |
+          set -euo pipefail
+          PREFIX="/practice/${{ inputs.target_env }}"
+          SUBNET_ID_A=$(aws ssm get-parameter --name "$PREFIX/subnet_id_a" --query "Parameter.Value" --output text)
+          SECURITY_GROUP_ID=$(aws ssm get-parameter --name "$PREFIX/security_group_id" --query "Parameter.Value" --output text)
+
+          echo "SUBNET_ID_A=$SUBNET_ID_A" >> $GITHUB_ENV
+          echo "SECURITY_GROUP_ID=$SECURITY_GROUP_ID" >> $GITHUB_ENV
+
+      - name: Build containerOverrides JSON
+        id: overrides
+        env:
+          COMMAND_TYPE: ${{ inputs.command_type }}
+          SHELL_COMMAND: ${{ inputs.shell_command }}
+        run: |
+          set -euo pipefail
+
+          case "$COMMAND_TYPE" in
+            migrate) CMD_JSON='["php","artisan","migrate","--force"]' ;;
+            seed)    CMD_JSON='["php","artisan","db:seed","--force"]' ;;
+            shell)   CMD_JSON=$(jq -nc --arg c "$SHELL_COMMAND" '["bash","-lc",$c]') ;;
+            *)       echo "Unknown command_type: $COMMAND_TYPE"; exit 1 ;;
+          esac
+
+          OVERRIDES=$(jq -nc \
+            --arg name "$CONTAINER_NAME" \
+            --argjson cmd "$CMD_JSON" \
+            '{containerOverrides:[{name:$name, command:$cmd}]}')
+
+          echo "Overrides JSON: $OVERRIDES"
+          echo "OVERRIDES=$OVERRIDES" >> $GITHUB_OUTPUT
+
+      - name: Run ECS Task
+        id: run
+        run: |
+          set -euo pipefail
+          echo "Starting ${{ inputs.command_type }} on ${{ inputs.target_env }}..."
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --task-definition "${{ env.ECS_TASK_DEF }}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNET_ID_A }}],securityGroups=[${{ env.SECURITY_GROUP_ID }}],assignPublicIp=DISABLED}" \
+            --overrides '${{ steps.overrides.outputs.OVERRIDES }}' \
+            --query "tasks[0].taskArn" --output text)
+
+          echo "Task ARN: $TASK_ARN"
+          echo "TASK_ARN=$TASK_ARN" >> $GITHUB_OUTPUT
+
+      - name: Wait for task to stop
+        run: |
+          set -euo pipefail
+          aws ecs wait tasks-stopped \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --tasks "${{ steps.run.outputs.TASK_ARN }}"
+
+      - name: Check exit code
+        run: |
+          set -euo pipefail
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --tasks "${{ steps.run.outputs.TASK_ARN }}" \
+            --query "tasks[0].containers[0].exitCode" \
+            --output text)
+
+          STOPPED_REASON=$(aws ecs describe-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --tasks "${{ steps.run.outputs.TASK_ARN }}" \
+            --query "tasks[0].stoppedReason" \
+            --output text)
+
+          echo "Exit code: $EXIT_CODE"
+          echo "Stopped reason: $STOPPED_REASON"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "❌ ${{ inputs.command_type }} failed with exit code: $EXIT_CODE"
+            exit 1
+          fi
+
+          echo "✅ ${{ inputs.command_type }} completed successfully!"
