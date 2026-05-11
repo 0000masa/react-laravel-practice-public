@@ -175,7 +175,74 @@ UI 入力:
 - `command_type`: `shell`
 - `shell_command`: `php artisan cache:clear && php artisan config:clear`
 
-## 9. 実行結果の確認
+### Laravel ログの末尾確認
+
+UI 入力:
+- `target_env`: `stg`
+- `command_type`: `shell`
+- `shell_command`: `tail -n 200 storage/logs/laravel.log`
+
+CloudWatch Logs に到達する前のアプリログを確認したいときに使えます。
+
+### コンテナのディスク使用量確認
+
+UI 入力:
+- `target_env`: `stg`
+- `command_type`: `shell`
+- `shell_command`: `df -h && du -sh storage/* 2>/dev/null`
+
+`storage/` 配下が肥大化していないか、タスク用コンテナのディスクに余裕があるかの簡易確認用です。
+
+### インストール済みパッケージの確認（composer.lock 読み）
+
+UI 入力:
+- `target_env`: `prod`
+- `command_type`: `shell`
+- `shell_command`: `grep -E '"name"|"version"' composer.lock | head -n 100`
+- `confirm_prod`: `yes`
+
+本番イメージは `composer-builder` ステージで `vendor/` だけ取り込む構成のため、`composer` CLI は同梱されていません (`docker/ecr/backend/Dockerfile`)。インストール済みパッケージのバージョンを照合したいときは `composer.lock` を直接読みます。
+
+### DB 接続疎通確認（PHP 経由）
+
+UI 入力:
+- `target_env`: `stg`
+- `command_type`: `shell`
+- `shell_command`: `php -r '$p=new PDO("mysql:host=".getenv("DB_HOST").";dbname=".getenv("DB_DATABASE"),getenv("DB_USERNAME"),getenv("DB_PASSWORD"));echo $p->query("SELECT NOW(),VERSION()")->fetch(PDO::FETCH_NUM)[1].PHP_EOL;'`
+
+コンテナには `mysql` クライアントが入っていないため、生 SQL を投げたい場合は `pdo_mysql` 拡張経由で PHP から繋ぐか、Laravel 経由なら `php artisan db:show` / `php artisan db:monitor` を使います。
+
+## 9. コンテナ内で使えるコマンド
+
+`runner-task` は本番 API と同じ `docker/ecr/backend/Dockerfile` でビルドされたイメージを使うため、Laravel 実行に必要なものだけが入っており、デバッグ向けツールは最小限です。
+
+### 入っているもの
+
+| カテゴリ | コマンド | 由来 |
+|---|---|---|
+| シェル / 基本 GNU coreutils | `bash`, `sh`, `ls`, `cat`, `head`, `tail`, `grep`, `sed`, `awk`, `find`, `cp`, `mv`, `rm`, `mkdir`, `chmod`, `chown`, `wc`, `sort`, `uniq`, `xargs`, `tee`, `cut`, `df`, `du`, `date`, `env` | `php:8.2-fpm-bullseye` ベース |
+| ネットワーク | `curl` | ベースイメージ同梱 |
+| アーカイブ / VCS | `git`, `unzip`, `tar`, `gzip` | Dockerfile の `apt-get install` |
+| 画像処理 | `convert`, `mogrify`, `identify` (ImageMagick) | Dockerfile の `apt-get install imagemagick` |
+| PHP | `php` (8.2), `php-fpm`, `install-php-extensions` | ベース + `mlocati/install-php-extensions` |
+| PHP 拡張 | `gd`, `pdo_mysql`, `mbstring`, `zip`, `pcntl`, `bcmath`, `imagick`, `opentelemetry` | `docker-php-ext-install` / `pecl` |
+| Laravel | `php artisan ...` 全般 | `backend/www/` を COPY |
+
+### 入っていないもの（よく欲しくなるが使えない）
+
+| コマンド | 代替 |
+|---|---|
+| `mysql` / `mysqldump` | `php -r '...PDO...'` または `php artisan db:show` / `db:monitor` / `tinker` |
+| `composer` (CLI) | `composer.lock` を `grep`/`cat` で読む。インストール操作はビルド時に完結している |
+| `psql`, `redis-cli` | 同じく PHP から接続する |
+| `vim`, `nano`, `less` | `cat` / `tail` / `head` で代用。コンテナ内ファイル編集は原則しない |
+| `ps`, `top`, `htop` | `procps` 未導入。プロセス状態は CloudWatch / ECS 側で確認 |
+| `ssh`, `nc`, `telnet` | コンテナから他ホストへの対話接続は想定外 |
+| `jq` | コンテナ内では未導入（ワークフロー側のランナーには入っている） |
+
+足りないツールが恒常的に必要になったら、`docker/ecr/backend/Dockerfile` 側に `apt-get install` を足す判断になります。ただし本イメージは API として常時稼働する本番イメージでもあるため、**デバッグ目的でのパッケージ追加はイメージサイズと攻撃面の増加を伴う** ことに注意してください。
+
+## 10. 実行結果の確認
 
 | 確認場所 | 内容 |
 |---|---|
@@ -185,7 +252,7 @@ UI 入力:
 
 ロググループ名は Terraform の `aws_cloudwatch_log_group.ecs_log.name` から確定します。
 
-## 10. 関連ファイル
+## 11. 関連ファイル
 
 | 種類 | パス | 内容 |
 |---|---|---|
