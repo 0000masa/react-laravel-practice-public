@@ -21,9 +21,9 @@
 
 | ロール種別 | sub クレーム (StringEquals / StringLike) | 追加 condition (StringEquals) | 引き受けの条件 |
 | --- | --- | --- | --- |
-| ECR push (Laravel / Nginx) | `repo:0000masa/react-laravel-practice:*` (StringLike) | なし | 任意 ref / environment（修正ブランチで stg 確認するため） |
-| 環境別 7 種 (stg) | `repo:0000masa/react-laravel-practice:environment:stg` | `token.actions.githubusercontent.com:ref` = `refs/heads/main` | stg environment + main ブランチ |
-| 環境別 7 種 (prod) | `repo:0000masa/react-laravel-practice:environment:prod` | `token.actions.githubusercontent.com:ref` = `refs/heads/main` | prod environment + main ブランチ |
+| ECR push (Laravel / Nginx) | `repo:0000masa/react-laravel-practice-public:*` (StringLike) | なし | 任意 ref / environment（修正ブランチで stg 確認するため） |
+| 環境別 7 種 (stg) | `repo:0000masa/react-laravel-practice-public:environment:stg` | `token.actions.githubusercontent.com:ref` = `refs/heads/main` | stg environment + main ブランチ |
+| 環境別 7 種 (prod) | `repo:0000masa/react-laravel-practice-public:environment:prod` | `token.actions.githubusercontent.com:ref` = `refs/heads/main` | prod environment + main ブランチ |
 
 環境別 7 ロールは「`environment:` を `stg`／`prod` に指定したジョブ」かつ「`main` ブランチからの起動」の **両方** を満たさないと AssumeRole に失敗する。`main` 以外のブランチから `workflow_dispatch` で動かそうとした場合、`Configure AWS Credentials` ステップで止まる。
 
@@ -132,7 +132,7 @@ trust policy のうち、`Condition` ブロックの中に `StringEquals` と `F
       "Condition": {
         "StringEquals": {
           "token.actions.githubusercontent.com:ref": "refs/heads/main",
-          "token.actions.githubusercontent.com:sub": "repo:0000masa/react-laravel-practice:environment:stg"
+          "token.actions.githubusercontent.com:sub": "repo:0000masa/react-laravel-practice-public:environment:stg"
         },
         "ForAllValues:StringEquals": {
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
@@ -284,7 +284,7 @@ AWS の公式 IAM ドキュメントでは「**Condition operator**（条件演�
 
 ## 5. stg environment secrets
 
-ECR push 以外の **6 ワークフロー** が `environment: ${{ inputs.target_env }}` で参照する。`target_env=stg` を選択した時のみこちらの値が解決される。各ロールの trust policy は **`sub` = `repo:0000masa/react-laravel-practice:environment:stg`** かつ **`ref` = `refs/heads/main`** を要求するため、stg environment かつ main ブランチからのジョブだけが AssumeRole できる。
+ECR push 以外の **6 ワークフロー** が `environment: ${{ inputs.target_env }}` で参照する。`target_env=stg` を選択した時のみこちらの値が解決される。各ロールの trust policy は **`sub` = `repo:0000masa/react-laravel-practice-public:environment:stg`** かつ **`ref` = `refs/heads/main`** を要求するため、stg environment かつ main ブランチからのジョブだけが AssumeRole できる。
 
 | シークレット名 | 用途（使用ワークフロー） | Terraform リソース | ARN（プレースホルダ） |
 | --- | --- | --- | --- |
@@ -299,7 +299,7 @@ ECR push 以外の **6 ワークフロー** が `environment: ${{ inputs.target_
 
 ## 6. prod environment secrets
 
-ECR push 以外の **6 ワークフロー** が `target_env=prod` を選択した時に参照する。prod 環境用の Terraform (`terraform/prod/`) は別途作成予定で、`github_environment_name = "prod"` を `terraform.tfvars` に設定する。各ロールの trust policy は **`sub` = `repo:0000masa/react-laravel-practice:environment:prod`** かつ **`ref` = `refs/heads/main`** を要求する。アカウント ID とロール名はプレースホルダ。
+ECR push 以外の **6 ワークフロー** が `target_env=prod` を選択した時に参照する。prod 環境用の Terraform (`terraform/prod/`) は別途作成予定で、`github_environment_name = "prod"` を `terraform.tfvars` に設定する。各ロールの trust policy は **`sub` = `repo:0000masa/react-laravel-practice-public:environment:prod`** かつ **`ref` = `refs/heads/main`** を要求する。アカウント ID とロール名はプレースホルダ。
 
 | シークレット名 | Terraform リソース | ARN（プレースホルダ） |
 | --- | --- | --- |
