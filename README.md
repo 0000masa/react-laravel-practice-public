@@ -21,7 +21,7 @@ React フロントエンド・Laravel バックエンド・Terraform による A
 
 ## アーキテクチャ
 
-![AWS Architecture](drawio/architecture.png)
+![AWS Architecture](drawio/architecture-map.png)
 
 主な構成要素:
 
