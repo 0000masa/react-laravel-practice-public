@@ -10,9 +10,60 @@
 
 旧構成では `migrate.yml` と `seeder.yml` の2本に分かれており、運用で発生する非定型 DB 作業（特定ユーザーのフラグ修正、マイグレーション状態確認、キャッシュクリア等）は SSH 接続や ECS Exec を都度開ける必要がありました。本ワークフローはそれらを **承認フロー付きで安全に流せる単一窓口** に統合しています。
 
-設計思想は [keisuke69 氏の記事「GitHub Actions と ECS Run Task で DB 操作自動化」](https://www.keisuke69.net/entry/2026/05/02/173529) を参考にしていますが、`entrypoint.sh` を使わず **ECS の `containerOverrides` で `command` を直接上書きする方式** を採用したため、Laravel イメージ側 (`docker/ecr/backend/Dockerfile`) には変更を加えていません。
+設計思想は [keisuke69 氏の記事「GitHub Actions と ECS Run Task で DB 操作自動化」](https://www.keisuke69.net/entry/2026/05/02/173529) を参考にしていますが、**コマンドの渡し方** で意図的に方針を変えています（詳細は §2）。本プロジェクトでは `entrypoint.sh` を使わず ECS の `containerOverrides.command` を直接上書きする方式を採用したため、Laravel イメージ側 (`docker/ecr/backend/Dockerfile`) には変更を加えていません。
 
-## 2. なぜ ECS Exec ではなく GitHub Actions 経由か
+## 2. keisuke69 氏のアプローチとの差分（entrypoint.sh vs containerOverrides）
+
+両者とも「GitHub Actions の `workflow_dispatch` から ECS RunTask を叩き、短命タスクで DB 操作を実行する」という大枠は同じです。違いは **コマンドをどこで分岐させるか** の一点に集約されます。
+
+### keisuke69 氏の方式: イメージ内の `entrypoint.sh` で分岐
+
+keisuke69 氏は Docker イメージに `entrypoint.sh` を組み込み、`DB_COMMAND` 環境変数の値で実行内容を切り替えます。
+
+```bash
+#!/bin/sh
+case "${DB_COMMAND:-}" in
+  migrate)            npx prisma migrate deploy ;;
+  seed-master)        node scripts/seed-master.js ;;
+  seed-dev)           node scripts/seed-dev.js ;;
+  patch)              node scripts/patch.js ;;
+  generate-tts-cache) node scripts/tts-cache.js ;;
+  "")                 exec "$@" ;;  # 未設定なら通常のアプリ起動経路へ
+  *) echo "unknown DB_COMMAND: $DB_COMMAND" >&2; exit 1 ;;
+esac
+```
+
+> 上記はあくまで概念図で、記事中の実コードを写したものではありません。記事の説明から本プロジェクト向けに再構成しています。
+
+ワークフロー側からは `containerOverrides.environment` で `DB_COMMAND=seed-master` のような **シンボル名だけを渡せばよい** ため、ワークフロー YAML はスクリプトのパスや引数を一切知らずに済みます（任意コマンドを流す custom-script モードのみ `containerOverrides.command` 経由で渡す、というハイブリッド構成）。
+
+この方式が選ばれた背景には、keisuke69 氏側のプロジェクトに **`seed-master` / `seed-dev` / `patch` / `generate-tts-cache` といったドメイン固有の named operation が複数ある** ことが挙げられます。これらは単一の CLI コマンドでは表せず、複数ステップやプロジェクト固有のスクリプトを内包するため、イメージ内に名前付きで閉じ込めるメリットが大きい構成です。また、用途ごとにイメージを分けると依存関係の差分でバグが出やすいため、**1 つのイメージで全用途を賄う** ことを優先しており、その分岐ハブが `entrypoint.sh` という位置づけになっています。
+
+### 本プロジェクトの方式: ワークフロー側で `containerOverrides.command` を直接組み立てる
+
+本プロジェクトでは `entrypoint.sh` は持たず、§5 Step 4 にあるとおりワークフロー YAML 内で `case "$COMMAND_TYPE"` を分岐させ、`containerOverrides.command` をその場で組み立てて run-task に渡します。タスク定義 `runner-task` は `command` を持たないため、毎回ワークフローから与える `command` がそのまま実行コマンドになります。
+
+### 両者の比較
+
+| 観点 | keisuke69 氏 | 本プロジェクト |
+|---|---|---|
+| 分岐の置き場所 | イメージ内 `entrypoint.sh`（`DB_COMMAND` の case） | ワークフロー YAML (`case "$COMMAND_TYPE"`) |
+| containerOverrides の使い方 | 主に `environment` で `DB_COMMAND` を渡す（custom-script のみ `command`） | 常に `command` を直接上書き |
+| Dockerfile への変更 | `entrypoint.sh` の追加が必要 | 不要（本番 API イメージそのまま使う） |
+| 名前付きカスタム操作 | イメージ内スクリプトとして同梱 | `shell` モードで都度コマンドを書く |
+| ワークフローから見える情報 | シンボル名のみ（実体はイメージを読まないと分からない） | 実行コマンドそのもの |
+| 想定ユースケース | named operation が多数ある中〜大規模プロジェクト | named operation が migrate/seed の 2 種で済むシンプル構成 |
+
+### 本プロジェクトが `entrypoint.sh` を採用しなかった理由
+
+1. 必要なオペレーションが `migrate` / `seed` / 任意 `shell` の 3 種しかなく、`migrate` と `seed` は単一 artisan コマンドで済むため、イメージ内に複数行スクリプトを閉じ込める必要がない。
+2. 任意コマンドは `shell` モードで取れるようにしてあるため、keisuke69 氏が増やしていったような named operation は GitHub Actions の入力欄に直接書けば足りる。
+3. `runner-task` 用イメージを本番 API イメージ (`docker/ecr/backend/Dockerfile`) と完全同一にしておきたい。`entrypoint.sh` を入れると API 起動経路にも影響しうるため、イメージに手を入れずに ECS の `containerOverrides.command` で完結させる方が副作用が小さい。
+4. ワークフロー YAML を読めば「このジョブが何を実行するか」が `command` 配列で完全に見える。`DB_COMMAND=foo` の `foo` がイメージの中で何にマップされているかを別ファイルで追う必要がない。コマンドの所在がワークフロー側に一元化される。
+
+要するに **どちらが優れているという話ではなく、ドメイン固有スクリプトをいくつ持つかで自然と選び方が決まる** という整理です。本プロジェクトで named operation が増えてきたら、その時点で `entrypoint.sh` 方式への移行を検討するタイミングになります。
+
+## 3. なぜ ECS Exec ではなく GitHub Actions 経由か
 
 | 観点 | ECS Exec | `db-task.yml` 経由 |
 |---|---|---|
@@ -23,7 +74,7 @@
 
 非定型作業をすべて GitHub Actions に通す運用の方が、何が誰にいつ実行されたかをあとから追跡しやすく、レビュー圧もかけやすくなります。
 
-## 3. 入力パラメータ
+## 4. 入力パラメータ
 
 | 入力 | 必須 | 内容 |
 |---|---|---|
@@ -32,7 +83,7 @@
 | `shell_command` | △ | `command_type=shell` のときのみ使用。`bash -lc "<入力文字列>"` として実行される |
 | `confirm_prod` | △ | `target_env=prod` のとき `yes` を要求。ステージから本番への意図しない実行を物理的に止める |
 
-## 4. 処理フロー
+## 5. 処理フロー
 
 ```
 1. Validate inputs        : prod ゲート + shell 引数チェック
@@ -108,13 +159,13 @@ EXIT_CODE=$(aws ecs describe-tasks ... --query "tasks[0].containers[0].exitCode"
 
 完了待ちで止まり、コンテナの exit code が 0 以外ならジョブも fail させるため、マイグレーション失敗や seed 失敗が GitHub 上で赤く表示されます。
 
-## 5. シェルインジェクション対策
+## 6. シェルインジェクション対策
 
 `command_type=shell` ではユーザーの自由入力 `shell_command` を実行することになりますが、`jq --arg c "$SHELL_COMMAND"` で **JSON 文字列としてエスケープ** したうえで `["bash","-lc",$c]` の **第3引数** に渡しているため、入力に何が入っていても shell 側でメタ文字解釈されません。
 
 例えば `shell_command='rm -rf /; echo PWNED'` を入力しても、`bash -lc` の単一引数として渡されるので `bash` の中で1行のコマンド列として解釈されはしますが、**ワークフローシェルや AWS CLI の引数構造を破壊することはありません** (= run-task コマンド全体を乗っ取る攻撃は不可能)。`shell_command` 自体が任意コマンドなのでコンテナ内の挙動はオペレーターの責任ですが、ワークフロー外への漏洩・横展開は防げます。
 
-## 6. 権限境界
+## 7. 権限境界
 
 `gha_db_runner_role` の IAM ポリシー (`terraform/modules/app-infrastructure/iam_policy_github_actions.tf` の `gha_db_runner_policy`) は以下のみを許可:
 
@@ -125,7 +176,7 @@ EXIT_CODE=$(aws ecs describe-tasks ... --query "tasks[0].containers[0].exitCode"
 
 これにより、たとえ db-task.yml の手元で別のタスク定義名を指定しても **AccessDenied** で蹴られます。`runner-task` 経由でしか DB に到達できない構造です。
 
-## 7. prod 安全ゲート
+## 8. prod 安全ゲート
 
 | ゲート | 設定箇所 | 効果 |
 |---|---|---|
@@ -135,7 +186,7 @@ EXIT_CODE=$(aws ecs describe-tasks ... --query "tasks[0].containers[0].exitCode"
 
 3 つすべてを通過しないと本番に到達できません。
 
-## 8. 使用例
+## 9. 使用例
 
 ### マイグレーション適用
 
@@ -212,7 +263,7 @@ UI 入力:
 
 コンテナには `mysql` クライアントが入っていないため、生 SQL を投げたい場合は `pdo_mysql` 拡張経由で PHP から繋ぐか、Laravel 経由なら `php artisan db:show` / `php artisan db:monitor` を使います。
 
-## 9. コンテナ内で使えるコマンド
+## 10. コンテナ内で使えるコマンド
 
 `runner-task` は本番 API と同じ `docker/ecr/backend/Dockerfile` でビルドされたイメージを使うため、Laravel 実行に必要なものだけが入っており、デバッグ向けツールは最小限です。
 
@@ -242,7 +293,7 @@ UI 入力:
 
 足りないツールが恒常的に必要になったら、`docker/ecr/backend/Dockerfile` 側に `apt-get install` を足す判断になります。ただし本イメージは API として常時稼働する本番イメージでもあるため、**デバッグ目的でのパッケージ追加はイメージサイズと攻撃面の増加を伴う** ことに注意してください。
 
-## 10. 実行結果の確認
+## 11. 実行結果の確認
 
 | 確認場所 | 内容 |
 |---|---|
@@ -252,7 +303,7 @@ UI 入力:
 
 ロググループ名は Terraform の `aws_cloudwatch_log_group.ecs_log.name` から確定します。
 
-## 11. 関連ファイル
+## 12. 関連ファイル
 
 | 種類 | パス | 内容 |
 |---|---|---|
