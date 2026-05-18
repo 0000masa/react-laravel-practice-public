@@ -13,6 +13,11 @@ variable "github_environment_name" {
   type        = string
 }
 
+variable "github_allowed_branches" {
+  description = "GitHub Actions の environment 別ロールに AssumeRole を許可するブランチ名のリスト（例: stg は [\"main\", \"develop\"]、prod は [\"main\"]）"
+  type        = list(string)
+}
+
 variable "tfstate_bucket" {
   description = "Terraform state が格納されている S3 バケット名"
   type        = string

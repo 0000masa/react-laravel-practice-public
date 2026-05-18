@@ -3,7 +3,8 @@
 # =====================================================================
 # 各ワークフローに専用ロールを定義し、OIDC で引き受け可能にする。
 # - ECR push 系 2 ロール: 任意 ref / environment から引き受け可（修正ブランチで stg 確認できるように）
-# - その他 7 ロール: `var.github_environment_name` の Environment + main ブランチからのみ引き受け可
+# - その他 7 ロール: `var.github_environment_name` の Environment +
+#   `var.github_allowed_branches` で許可されたブランチからのみ引き受け可
 #
 # 注意: ワークフロー側で `environment:` を指定すると OIDC トークンの `sub` は
 #       `repo:OWNER/REPO:environment:NAME` 形式になり、`ref:refs/heads/...` 形式
@@ -19,15 +20,16 @@ locals {
   # 任意 ref から引き受け可能な sub クレームパターン (StringLike, ECR push 用)
   oidc_sub_any_ref = "repo:${var.github_repository}:*"
 
-  # 環境別 7 ロールの trust policy に追加する「main ブランチからのみ実行可」制約。
+  # 環境別 7 ロールの trust policy に追加する「許可ブランチからのみ実行可」制約。
   # `:ref` クレームは GitHub OIDC が標準で発行するクレームの一つで、ジョブを起動した
   # リポジトリの ref（例: refs/heads/main）を表す。enable_github_oidc は sub/aud/iss
   # しか自動で入れないため、`trust_policy_conditions` で明示的に追加する。
-  trust_conditions_main_only = [
+  # StringEquals + 複数値は OR 評価なので、リストに並べるだけで複数ブランチ許可になる。
+  trust_conditions_allowed_branches = [
     {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:ref"
-      values   = ["refs/heads/main"]
+      values   = [for b in var.github_allowed_branches : "refs/heads/${b}"]
     }
   ]
 }
@@ -67,7 +69,7 @@ module "gha_ecr_nginx_role" {
 }
 
 # ---------------------------------------------------------------------
-# ECS UpdateService: main service (Laravel コンテナ更新, 当該 environment + main のみ)
+# ECS UpdateService: main service (Laravel コンテナ更新, 当該 environment + 許可ブランチのみ)
 # ---------------------------------------------------------------------
 module "gha_ecs_update_laravel_role" {
   source = "terraform-aws-modules/iam/aws//modules/iam-role"
@@ -77,7 +79,7 @@ module "gha_ecs_update_laravel_role" {
 
   enable_github_oidc      = true
   oidc_subjects           = [local.oidc_sub_environment]
-  trust_policy_conditions = local.trust_conditions_main_only
+  trust_policy_conditions = local.trust_conditions_allowed_branches
 
   policies = {
     EcsUpdateMainService = aws_iam_policy.gha_ecs_update_main_service_policy.arn
@@ -85,7 +87,7 @@ module "gha_ecs_update_laravel_role" {
 }
 
 # ---------------------------------------------------------------------
-# ECS UpdateService: main service (Nginx コンテナ更新, 当該 environment + main のみ)
+# ECS UpdateService: main service (Nginx コンテナ更新, 当該 environment + 許可ブランチのみ)
 # Laravel と同じサービスを更新するため policy は共有
 # ---------------------------------------------------------------------
 module "gha_ecs_update_nginx_role" {
@@ -96,7 +98,7 @@ module "gha_ecs_update_nginx_role" {
 
   enable_github_oidc      = true
   oidc_subjects           = [local.oidc_sub_environment]
-  trust_policy_conditions = local.trust_conditions_main_only
+  trust_policy_conditions = local.trust_conditions_allowed_branches
 
   policies = {
     EcsUpdateMainService = aws_iam_policy.gha_ecs_update_main_service_policy.arn
@@ -104,7 +106,7 @@ module "gha_ecs_update_nginx_role" {
 }
 
 # ---------------------------------------------------------------------
-# ECS UpdateService: queue worker (当該 environment + main のみ)
+# ECS UpdateService: queue worker (当該 environment + 許可ブランチのみ)
 # ---------------------------------------------------------------------
 module "gha_ecs_update_queue_role" {
   source = "terraform-aws-modules/iam/aws//modules/iam-role"
@@ -114,7 +116,7 @@ module "gha_ecs_update_queue_role" {
 
   enable_github_oidc      = true
   oidc_subjects           = [local.oidc_sub_environment]
-  trust_policy_conditions = local.trust_conditions_main_only
+  trust_policy_conditions = local.trust_conditions_allowed_branches
 
   policies = {
     EcsUpdateQueueService = aws_iam_policy.gha_ecs_update_queue_service_policy.arn
@@ -122,7 +124,7 @@ module "gha_ecs_update_queue_role" {
 }
 
 # ---------------------------------------------------------------------
-# DB Runner タスク実行 (migrate / seed / shell 共通, 当該 environment + main のみ)
+# DB Runner タスク実行 (migrate / seed / shell 共通, 当該 environment + 許可ブランチのみ)
 # ---------------------------------------------------------------------
 module "gha_db_runner_role" {
   source = "terraform-aws-modules/iam/aws//modules/iam-role"
@@ -132,7 +134,7 @@ module "gha_db_runner_role" {
 
   enable_github_oidc      = true
   oidc_subjects           = [local.oidc_sub_environment]
-  trust_policy_conditions = local.trust_conditions_main_only
+  trust_policy_conditions = local.trust_conditions_allowed_branches
 
   policies = {
     DbRunnerRunTask = aws_iam_policy.gha_db_runner_policy.arn
@@ -140,7 +142,7 @@ module "gha_db_runner_role" {
 }
 
 # ---------------------------------------------------------------------
-# S3 frontend デプロイ + CloudFront キャッシュ削除 (当該 environment + main のみ)
+# S3 frontend デプロイ + CloudFront キャッシュ削除 (当該 environment + 許可ブランチのみ)
 # ---------------------------------------------------------------------
 module "gha_s3_deploy_frontend_role" {
   source = "terraform-aws-modules/iam/aws//modules/iam-role"
@@ -150,7 +152,7 @@ module "gha_s3_deploy_frontend_role" {
 
   enable_github_oidc      = true
   oidc_subjects           = [local.oidc_sub_environment]
-  trust_policy_conditions = local.trust_conditions_main_only
+  trust_policy_conditions = local.trust_conditions_allowed_branches
 
   policies = {
     S3DeployFrontend = aws_iam_policy.gha_s3_deploy_frontend_policy.arn
@@ -158,7 +160,7 @@ module "gha_s3_deploy_frontend_role" {
 }
 
 # ---------------------------------------------------------------------
-# ecspresso によるタスク定義登録 / サービスデプロイ (当該 environment + main のみ)
+# ecspresso によるタスク定義登録 / サービスデプロイ (当該 environment + 許可ブランチのみ)
 # ---------------------------------------------------------------------
 module "gha_ecspresso_role" {
   source = "terraform-aws-modules/iam/aws//modules/iam-role"
@@ -168,7 +170,7 @@ module "gha_ecspresso_role" {
 
   enable_github_oidc      = true
   oidc_subjects           = [local.oidc_sub_environment]
-  trust_policy_conditions = local.trust_conditions_main_only
+  trust_policy_conditions = local.trust_conditions_allowed_branches
 
   policies = {
     Ecspresso = aws_iam_policy.gha_ecspresso_policy.arn

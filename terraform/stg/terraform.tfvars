@@ -1,6 +1,7 @@
 project_name             = "practice-stg"
 github_repository        = "0000masa/react-laravel-practice-public"
 github_environment_name  = "stg"
+github_allowed_branches  = ["main", "develop"]
 tfstate_bucket           = "github-action-terraform-tf-state-bucket"
 tfstate_key              = "practice/laravel/stg/terraform.tfstate"
 domain_name              = "mylabinfra.com"

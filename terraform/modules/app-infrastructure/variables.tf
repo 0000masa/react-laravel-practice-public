@@ -13,6 +13,23 @@ variable "github_environment_name" {
   type        = string
 }
 
+variable "github_allowed_branches" {
+  description = <<-EOT
+    environment 別 GitHub Actions ロール（ECS update / db_runner / s3_deploy_frontend / ecspresso）
+    の AssumeRole を許可するブランチ名のリスト。
+    値はブランチ名のみ指定し、モジュール側で "refs/heads/<branch>" 形式に変換して
+    IAM trust policy の token.actions.githubusercontent.com:ref 条件に展開する。
+    例: stg は ["main", "develop"]、prod は ["main"]。
+    ECR push 2 ロールは任意 ref から引き受け可能で、この変数の影響を受けない。
+  EOT
+  type        = list(string)
+
+  validation {
+    condition     = length(var.github_allowed_branches) > 0
+    error_message = "github_allowed_branches には少なくとも1つのブランチ名を指定してください。"
+  }
+}
+
 variable "tfstate_bucket" {
   description = "Terraform state が格納されている S3 バケット名（GitHub Actions の ecspresso ロールが state を読むため）"
   type        = string

@@ -4,6 +4,7 @@ module "app" {
   project_name             = var.project_name
   github_repository        = var.github_repository
   github_environment_name  = var.github_environment_name
+  github_allowed_branches  = var.github_allowed_branches
   tfstate_bucket           = var.tfstate_bucket
   tfstate_key              = var.tfstate_key
   domain_name              = var.domain_name
