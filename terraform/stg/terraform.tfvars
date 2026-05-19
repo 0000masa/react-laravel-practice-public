@@ -31,14 +31,14 @@ rds_config = {
 ecs_web_service_config = {
   cpu                  = "1024"
   memory               = "2048"
-  desired_count        = 1
+  desired_count        = 2
   bake_time_in_minutes = 0
   capacity_provider_strategy = [
     { capacity_provider = "FARGATE_SPOT", weight = 1, base = 0 }
   ]
   autoscaling = {
-    min_capacity        = 1
-    max_capacity        = 6
+    min_capacity        = 2
+    max_capacity        = 4
     cpu_target_value    = 60
     memory_target_value = 70
   }
