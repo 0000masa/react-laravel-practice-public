@@ -1,3 +1,5 @@
+run-name: "db-task.yml | env=${{ inputs.target_env }} / cmd=${{ inputs.command_type }} / shell=${{ inputs.shell_command }} / confirm=${{ inputs.confirm_prod }}"
+
 on:
   workflow_dispatch:
     inputs:

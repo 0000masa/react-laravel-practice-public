@@ -1,3 +1,5 @@
+run-name: "terraform-destroy-stg.yml | confirm=${{ inputs.confirmMessage }}"
+
 on:
   workflow_dispatch:
     inputs:

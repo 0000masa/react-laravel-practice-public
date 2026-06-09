@@ -1,3 +1,5 @@
+run-name: "ecspresso-update-task.yml | env=${{ inputs.target_env }} / nginx=${{ inputs.IMAGE_TAG_NGINX }} / laravel=${{ inputs.IMAGE_TAG_LARAVEL }}"
+
 on:
   workflow_dispatch:
     inputs:

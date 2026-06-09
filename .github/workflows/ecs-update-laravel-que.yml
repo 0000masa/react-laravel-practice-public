@@ -1,3 +1,5 @@
+run-name: "ecs-update-laravel-que.yml | env=${{ inputs.target_env }} / tag=${{ inputs.IMAGE_TAG_LARAVEL }}"
+
 on:
   workflow_dispatch:
     inputs:

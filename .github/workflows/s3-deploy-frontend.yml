@@ -1,3 +1,5 @@
+run-name: "s3-deploy-frontend.yml | env=${{ inputs.target_env }}"
+
 on:
   workflow_dispatch:
     inputs:

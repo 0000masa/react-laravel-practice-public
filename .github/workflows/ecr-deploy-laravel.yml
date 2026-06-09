@@ -1,3 +1,5 @@
+run-name: "ecr-deploy-laravel.yml | tag=sha-${{ github.sha }}"
+
 on:
   workflow_dispatch:
 

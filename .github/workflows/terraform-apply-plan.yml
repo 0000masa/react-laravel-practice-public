@@ -1,3 +1,5 @@
+run-name: "terraform-apply-plan.yml | action=${{ inputs.action }} / env=${{ inputs.target_env }} / nat=${{ inputs.enable_nat_gateway }}"
+
 on:
   workflow_dispatch:
     inputs:

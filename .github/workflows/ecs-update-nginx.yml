@@ -1,3 +1,5 @@
+run-name: "ecs-update-nginx.yml | env=${{ inputs.target_env }} / tag=${{ inputs.IMAGE_TAG_NGINX }}"
+
 on:
   workflow_dispatch:
     inputs:
