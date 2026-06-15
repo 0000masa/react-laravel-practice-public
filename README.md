@@ -25,9 +25,9 @@ React フロントエンド・Laravel バックエンド・Terraform による A
 
 主な構成要素:
 
-- **配信**: Route53 → CloudFront → WAF → S3 (フロントエンド静的配信) / API Gateway → VPC Link → ALB → ECS (API)
+- **配信**: Route53 → CloudFront (WAF 適用) を単一の入口とし、フロントエンド静的アセットは S3 (OAC 経由)、`/api/*` は同一ディストリビューションのビヘイビアで ALB → ECS (API) へ転送。ALB はデフォルト 403 + `X-CloudFront-Secret` ヘッダー一致のみ許可で、CloudFront 経由以外からのアクセスを遮断 (WAF バイパス防止)
 - **アプリ実行**: ECS Fargate (Web タスク / Queue Worker タスク / バッチタスク / 単発実行 Runner タスク)
-- **データ**: RDS MySQL 8.0
+- **データ**: RDS for MariaDB 11.4
 - **非同期処理**: SQS (QR コード生成) / EventBridge (日次バッチ) / SES (メール送信)
 - **可観測性**: CloudWatch Logs / Alarms, X-Ray (OpenTelemetry トレース) / Lambda 経由のエラー通知
 - **CI/CD**: GitHub Actions → ECR push → ecspresso による ECS デプロイ / S3 sync + CloudFront invalidation / Terraform plan/apply
@@ -53,6 +53,7 @@ React フロントエンド・Laravel バックエンド・Terraform による A
 | カテゴリ | 採用技術 |
 | --- | --- |
 | フレームワーク | Laravel 12 / PHP 8.2 |
+| DB | RDS for MariaDB 11.4 |
 | 認証 | Laravel Sanctum (API トークン) + Socialite (Google OAuth) |
 | ストレージ | League Flysystem AWS S3 v3 |
 | キュー | Laravel Queue (SQS ドライバ) |
@@ -153,9 +154,9 @@ npm run dev
 | --- | --- |
 | ネットワーク | VPC / Public・Private サブネット / NAT Gateway / ALB / Security Groups |
 | コンピュート | ECS Fargate (Web Service, Queue Worker Service, Daily Report Batch Task, Runner Task) |
-| データ | RDS MySQL 8.0 |
-| 配信 (フロント) | CloudFront + S3 + ACM + Route53 + WAF |
-| 配信 (API) | API Gateway + VPC Link + CloudFront |
+| データ | RDS for MariaDB 11.4 |
+| 配信 (フロント) | CloudFront + S3 (OAC) + ACM + Route53 + WAF |
+| 配信 (API) | CloudFront の `/api/*` ビヘイビア → ALB (`X-CloudFront-Secret` で CloudFront 経由のみ許可、デフォルト 403) |
 | 認証/ID | IAM (GitHub Actions OIDC ロール, ECS タスクロール, パススルー設計) |
 | メッセージング | SQS (QR 非同期キュー) / SES (メール) / SNS (アラート) |
 | スケジューラ | EventBridge → ECS RunTask |
@@ -207,6 +208,10 @@ git push
 ## 関連ドキュメント
 
 `docs/` 配下に設計・運用ドキュメントをまとめています。
+
+### 設計意図・工夫点・改善点（まず読む）
+
+- [interview-prep.md](docs/interview-prep.md) — 本プロジェクトの工夫点・改善点を Q&A 形式でまとめたサマリ
 
 ### コスト / 全体設計
 

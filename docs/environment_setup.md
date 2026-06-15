@@ -36,18 +36,19 @@ MAIL_FROM_NAME="${APP_NAME}"
 
 ### 本番環境（AWS S3 + SES）
 
-AWS ECSのタスク定義や環境変数設定で以下の値を設定してください：
+> **重要 — 静的アクセスキーは使わない**: 本番（ECS Fargate）では `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` を**設定しません**。ECS の **タスクロール**（`practice-stg-task-role`、`terraform/modules/app-infrastructure/iam.tf` で S3 / SES / SQS を最小権限にスコープ）に紐づくコンテナクレデンシャルを AWS SDK が自動取得します。実際の ECS タスク定義（`ecspresso/stg/web/ecs-task-def.jsonnet` / `ecspresso/_common.libsonnet`）にもアクセスキーは含めていません。静的キーを持たないことで漏洩リスクとローテーション運用を排除しています。
+
+AWS ECS のタスク定義では以下の値を設定します（アクセスキーは含めない）：
 
 ```env
-# ストレージ設定（AWS S3）
+# ストレージ設定（AWS S3）— 認証はタスクロールに委譲
 STORAGE_DISK=s3
 FILESYSTEM_DISK=s3
-AWS_ACCESS_KEY_ID=<AWS_ACCESS_KEY_ID>
-AWS_SECRET_ACCESS_KEY=<AWS_SECRET_ACCESS_KEY>
 AWS_DEFAULT_REGION=<AWS_REGION>
 AWS_BUCKET=<S3_BUCKET_NAME>
 AWS_USE_PATH_STYLE_ENDPOINT=false
 AWS_ENDPOINT=
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY は設定しない（タスクロールを使用）
 
 # メール設定（AWS SES）
 MAIL_MAILER=ses
@@ -112,13 +113,13 @@ MAIL_FROM_NAME="${APP_NAME}"
    - 必要に応じてサンドボックス環境の制限を解除
    - IAMユーザーにSES送信権限を付与
 
-3. **IAMユーザーの作成**
-   - S3とSESにアクセスできるIAMユーザーを作成
-   - アクセスキーとシークレットキーを取得
+3. **ECS タスクロールの権限付与**（IAM ユーザー＋アクセスキーは作らない）
+   - S3 / SES / SQS へのアクセスは ECS タスクロール（`*-task-role`）に付与する。Terraform（`iam.tf` / `iam_policy.tf`）で最小権限ポリシーを定義済み
+   - 静的アクセスキーを発行・配布しないため、漏洩リスクとローテーション運用が不要
 
 4. **ECSタスク定義の設定**
-   - 環境変数に上記の本番環境用設定を追加
-   - シークレットはAWS Secrets ManagerまたはECS Secretsを使用することを推奨
+   - 環境変数に上記の本番環境用設定を追加（アクセスキーは含めない）
+   - `DB_PASSWORD` / `APP_KEY` などの機密値は SSM Parameter Store の SecureString を `secrets[].valueFrom` で参照（実装済み）
 
 ## 動作確認
 

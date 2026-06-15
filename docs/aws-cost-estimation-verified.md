@@ -38,7 +38,7 @@
 | S3 ストレージ | frontend ~200 MB、images ~5 GB | ビルド成果物 + QR 画像想定 |
 | CloudFront 転送量 | フロントエンドアセット（キャッシュヒット率高）。低 ~200 GB / 中 ~600 GB / 高 ~2 TB | 低/中は無料枠 1 TB 内 |
 | CloudWatch Logs | 30 日保持、低 5 GB / 中 30 GB / 高 100 GB の月間取り込み | `cloudwatch.tf`, FireLens 収集、RPS 比例 |
-| WAF | 月リクエスト 低 1 M / 中 3 M / 高 15 M（CloudFront 経由のフロントエンドのみ） | `waf.tf`、API は非経由 |
+| WAF | 月リクエスト 低 1 M / 中 3 M / 高 15 M | `waf.tf`。**フロントと `/api/*` の両方が同一 CloudFront を経由するため、WAF はフロント・API 双方を検査する**（下記の WAF 節・注記参照） |
 | SES | 月 低 1,000 / 中 5,000 / 高 20,000 通 | エラー通知 + バッチレポート |
 | SQS | 月 低 0.1 M / 中 1 M / 高 5 M リクエスト | QR 非同期キュー、RPS 比例 |
 | NAT Gateway | 1 台、月処理データ 低 30 GB / 中 100 GB / 高 300 GB | `single_nat_gateway = true`、外部 API・ECR・Logs 経路 |
@@ -167,7 +167,7 @@
 | CF Functions | 無料枠内: $0 | 無料枠内: $0 | 無料枠内: $0 |
 | **CloudFront 小計** | **≈ $0.30** | **≈ $0.90** | **≈ $226.54** |
 
-> 注: API トラフィックは ALB 直接（`api.stg.*` で Route 53 → ALB）。CF を経由するのは frontend SPA アセットと images のみ。RPS 増加時も CF アセット要求はキャッシュヒット率に依存。
+> 注: API トラフィックも frontend と同一の CloudFront を経由する（`/api/*` ビヘイビア → ALB オリジン、`cloudfront.tf`）。ただし API は `caching_disabled` ポリシーでキャッシュせずオリジンへ素通しするため、CF のデータ転送 out としては計上されるがキャッシュ削減効果は無い。`api.<domain>` の Route 53 レコードは CloudFront オリジンの名前解決用で、直叩きは ALB のデフォルト 403 で遮断される。RPS 増加時の CF アセット要求はキャッシュヒット率に依存。
 >
 > 公式: https://aws.amazon.com/cloudfront/pricing/pay-as-you-go/
 
@@ -181,7 +181,7 @@
   - ルール / マネージドルールグループ: **$1.00/月** ごと
   - リクエスト: **$0.60 / 100 万**
 
-#### シナリオ別月額（WAF は frontend のみ）
+#### シナリオ別月額（WAF はフロント + `/api/*` の両方を検査）
 
 | 項目 | 低（1 M req） | 中（3 M req） | 高（15 M req） |
 |---|---|---|---|
@@ -190,6 +190,8 @@
 | リクエスト | 1 × $0.60 = $0.60 | 3 × $0.60 = $1.80 | 15 × $0.60 = **$9.00** |
 | **WAF 小計** | **≈ $6.60** | **≈ $7.80** | **≈ $15.00** |
 
+> **注記**: API は ALB 直結ではなく、フロントと同一の CloudFront ディストリビューションの `/api/*` ビヘイビア経由で ALB に到達する（`cloudfront.tf`）。ALB はデフォルト 403 + `X-CloudFront-Secret` ヘッダー一致のみ許可（`alb.tf`）のため、**API リクエストも CloudFront → WAF を必ず通過する**。上のリクエスト数はフロント + API の合算を見込んでおくこと（API トラフィックが多い場合は WAF リクエスト課金が増える）。
+>
 > 公式: https://aws.amazon.com/waf/pricing/
 
 ---
