@@ -38,6 +38,15 @@
 `run` / `sqladmin` / `secretmanager` / `artifactregistry` / `compute` / `dns` /
 `iam` / `iamcredentials` / `sts`（いずれも `*.googleapis.com`）。
 
+GCP では各サービス（API）が**プロジェクトごとにデフォルト無効**で、使う前にこのスイッチを
+ON にしないとリソース作成が `API not enabled` で弾かれる。だから手順3以降より先に行う
+（有効化自体は無料。課金は実使用分のみ）。
+
+> **AWS との違い**: AWS には基本この概念がない。EC2/S3/RDS などはアカウント作成時から使え、
+> 「サービスを使う前に有効化する」ゲートがない（アクセス可否は IAM で制御）。
+> 強いて近いのは GuardDuty / Security Hub / AWS Config やオプトインリージョンの「有効化」操作だが、
+> あれは一部サービスだけ。GCP は**全サービスがこのオプトイン方式**と捉えるのが正確。
+
 > `apis.tf` の `google_project_service.apis`（for_each）に対応。import id は `<PROJECT_ID>/<service>`。
 
 ## 3. Artifact Registry リポジトリ（2つ）
