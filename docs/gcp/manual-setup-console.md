@@ -35,8 +35,22 @@
 
 コンソール: **API とサービス → 有効なAPIとサービス → APIとサービスの有効化** で以下を有効化。
 
-`run` / `sqladmin` / `secretmanager` / `artifactregistry` / `compute` / `dns` /
-`iam` / `iamcredentials` / `sts`（いずれも `*.googleapis.com`）。
+| サービス名（エンドポイント） | コンソールで検索する正式名称 |
+| --- | --- |
+| `run.googleapis.com` | Cloud Run Admin API |
+| `sqladmin.googleapis.com` | Cloud SQL Admin API |
+| `secretmanager.googleapis.com` | Secret Manager API |
+| `artifactregistry.googleapis.com` | Artifact Registry API |
+| `compute.googleapis.com` | Compute Engine API |
+| `dns.googleapis.com` | Cloud DNS API |
+| `iam.googleapis.com` | Identity and Access Management (IAM) API |
+| `iamcredentials.googleapis.com` | IAM Service Account Credentials API |
+| `sts.googleapis.com` | Security Token Service API |
+
+> **サービス名とコンソール表示名は一致しない**。コンソールの「API とサービスの有効化」では
+> 右列の正式名称で検索する。Terraform（`google_project_service`）や import id では左列の
+> エンドポイント名（例 `run.googleapis.com`）を使う。`run` は「Cloud Run 本体」ではなく
+> Cloud Run を**管理操作するための Admin API** を指す点に注意。
 
 GCP では各サービス（API）が**プロジェクトごとにデフォルト無効**で、使う前にこのスイッチを
 ON にしないとリソース作成が `API not enabled` で弾かれる。だから手順3以降より先に行う
