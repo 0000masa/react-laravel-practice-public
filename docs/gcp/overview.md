@@ -12,6 +12,7 @@ Terraform コード（`terraform/gcp/`）の概要。設計判断の記録は
 
 - [manual-setup-console.md](./manual-setup-console.md) — コンソール手動作成 → import の手順（メイン）
 - [github-actions-image-push.md](./github-actions-image-push.md) — Artifact Registry へのイメージ push（GHA + WIF）
+- [aws-vs-gcp-org-project.md](./aws-vs-gcp-org-project.md) — アカウント / プロジェクト / 組織モデルの AWS 対比
 
 ## 構成（AWS → GCP マッピング）
 
