@@ -162,6 +162,41 @@ SA は **アイデンティティ**であると同時に **リソース**でも�
 これは AWS の「GitHub OIDC を信頼し、特定リポジトリだけ role を assume させる」信頼ポリシー＋
 権限ポリシーの組に **1:1 で対応**する。
 
+## 7. WIF ⇔ AWS GitHub OIDC AssumeRole（実値つき対応）
+
+§5/§6 を GitHub Actions の具体に落とし、**オブジェクト対オブジェクト**で並べる。実装は GCP=`ci.tf`、
+AWS=`terraform/modules/app-infrastructure/iam_github_actions.tf`。値はこのリポジトリの実値で、
+アカウント固有で確定しない部分だけプレースホルダにしている（`<PROJECT_ID>` = GCP プロジェクト ID 文字列、
+`<PROJECT_NUMBER>` = GCP プロジェクトの数値 ID [※]、`<ACCOUNT_ID>` = AWS 12 桁アカウント ID）。
+
+| 概念 / 役割 | GCP（WIF）オブジェクトと実値例 | AWS（OIDC AssumeRole）オブジェクトと実値例 |
+| --- | --- | --- |
+| **発行元の信頼登録** | Pool Provider の `issuer_uri` = `https://token.actions.githubusercontent.com`（`google_iam_workload_identity_pool_provider.github`） | IAM OIDC ID プロバイダ = `arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com`（`aws_iam_openid_connect_provider`） |
+| **外部 ID の入れ物**（外部 ID = GCP の外で発行された身元。ここでは **GitHub の OIDC トークンが持つ「repo `0000masa/...` の実行だ」という身元**） | Workload Identity **Pool** = `practice-gcp-stg-gh-pool`（外部 ID を principal 化するための名前空間。鍵は保管しない） | （対物なし。OIDC プロバイダ単位で完結） |
+| **トークン受理の条件（入口ゲート）** | Provider の `attribute_condition` = `assertion.repository == '0000masa/react-laravel-practice-public'`、`attribute_mapping` = `google.subject=assertion.sub` / `attribute.repository=assertion.repository` / `attribute.ref=assertion.ref` | ロール信頼ポリシーの `Condition`: `...:sub` = `repo:0000masa/react-laravel-practice-public:environment:stg`（ECR push 系は `repo:0000masa/react-laravel-practice-public:*`）、`...:aud` = `sts.amazonaws.com`、追加 `...:ref` = `refs/heads/main` |
+| **実行 ID（権限を持つ主体）** | Service Account = `practice-gcp-stg-run-deployer@<PROJECT_ID>.iam.gserviceaccount.com` | IAM ロール = `arn:aws:iam::<ACCOUNT_ID>:role/practice-stg-gha-ecs-update-laravel-role` |
+| **「誰がこの実行 ID になれるか」のバインド（出口ゲート）** | SA への `roles/iam.workloadIdentityUser`、member = `principalSet://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/practice-gcp-stg-gh-pool/attribute.repository/0000masa/react-laravel-practice-public`（`google_service_account_iam_member.wif_deployer`） | ロール信頼ポリシーの `Principal.Federated` = OIDC プロバイダ ARN ＋ `Action` = `sts:AssumeRoleWithWebIdentity` |
+| **何ができるか（権限）** | リソースへのロール付与: `roles/run.developer`（web サービス / migrate ジョブ）、`roles/artifactregistry.writer`（AR リポジトリ） | ロールにアタッチした権限ポリシー: `practice-stg-gha-ecs-update-main-service-policy`（`ecs:UpdateService` 等） |
+| **ワークフローが使う参照値（GitHub Secrets）** | `GCP_WIF_PROVIDER` = `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/practice-gcp-stg-gh-pool/providers/practice-gcp-stg-gh-provider`、`GCP_RUN_DEPLOY_SA` = 上記 SA メール | `AWS_ECS_UPDATE_LARAVEL_ROLE_ARN` = 上記ロール ARN |
+| **トークン交換の実行** | フェデレーション → SA を **impersonate**（短命トークン取得） | **`sts:AssumeRoleWithWebIdentity`**（一時クレデンシャル取得） |
+
+> **構造の違い（再掲・要点）**: AWS は「**誰が assume できるか（信頼ポリシー）**」と「**何ができるか
+> （権限ポリシー）**」を **1 個の IAM ロール**にぶら下げる。GCP はこれを **3 つに分割**する:
+> **SA**（＝何ができるか）＋ **Provider の `attribute_condition`**（＝入口: どのトークンを受理するか）
+> ＋ **SA の `workloadIdentityUser` バインド**（＝出口: どの principalSet がこの SA になれるか）。
+> AWS の 1 ロール ≒ GCP の 1 SA。OIDC プロバイダ（AWS）/ Pool・Provider（GCP）はどちらも全ロール/全 SA で共用。
+
+> **「SA メール」とは**: GCP のサービスアカウントは**メールアドレス形式の一意な識別子**で表される
+> （実際に受信できるメールボックスではない）。自分で作る SA は `<account_id>@<PROJECT_ID>.iam.gserviceaccount.com`
+> 形式で、例の deploy SA は `practice-gcp-stg-run-deployer@<PROJECT_ID>.iam.gserviceaccount.com`。これが
+> secret `GCP_RUN_DEPLOY_SA` の値で、`google-github-actions/auth` の `service_account:` に渡して impersonate する。
+
+> [※] **`<PROJECT_NUMBER>` が出てくる理由**: principalSet と Pool/Provider のフルリソース名は、プロジェクト
+> **ID 文字列**（`my-project-123`）ではなく**数値のプロジェクト番号**（例 `123456789012`）でキーされる。
+> Terraform 内では `google_iam_workload_identity_pool.github.name` 等の属性参照で自動解決されるため手で書かないが、
+> `GCP_WIF_PROVIDER` secret に値を設定するときなどに数値で現れる。番号はコンソールのプロジェクト情報や
+> `terraform output wif_provider`（解決済みの値）で確認できる。
+
 ---
 
 ## AWS ⇔ GCP 早見表
