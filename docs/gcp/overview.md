@@ -15,6 +15,7 @@ Terraform コード（`terraform/gcp/`）の概要。設計判断の記録は
 - [aws-vs-gcp-org-project.md](./aws-vs-gcp-org-project.md) — アカウント / プロジェクト / 組織モデルの AWS 対比
 - [billing-budget-alert.md](./billing-budget-alert.md) — 予算アラート（コスト通知メール）。AWS の Zero-Spend Budget 相当
 - [db-connection-aws-gcp.md](./db-connection-aws-gcp.md) — DB 接続方式の比較（ECS+RDS / Lambda+RDS Proxy / Cloud Run+Cloud SQL）
+- [iam-aws-gcp.md](./iam-aws-gcp.md) — GCP IAM の考え方（ロール / バインディング / SA のトラスト）と AWS 比較
 
 ## 構成（AWS → GCP マッピング）
 

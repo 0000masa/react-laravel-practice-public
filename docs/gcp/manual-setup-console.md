@@ -136,8 +136,9 @@ ON にしないとリソース作成が `API not enabled` で弾かれる。だ�
 > リソース側は触らない。リソース側のポリシー（S3 バケットポリシー / KMS キーポリシー / Secrets Manager の
 > リソースポリシー）は**任意の追加層**（Parameter Store には無い）。一方 **GCP はプリンシパル側に貼る手段が
 > 無く、リソース側 IAM が唯一の手段**。「SA にロールを付与」と「シークレット側で許可」は**別操作ではなく
-> 同じ1個のバインディング**であり、二重設定ではない。詳細は
-> [db-connection-aws-gcp.md](./db-connection-aws-gcp.md) も参照。
+> 同じ1個のバインディング**であり、二重設定ではない。
+> IAM モデル全体（ロール3種 / バインディング / SA のトラスト側 / AWS 比較）は
+> [iam-aws-gcp.md](./iam-aws-gcp.md) にまとめている。
 
 > `service_account.tf`。シークレットは `google_secret_manager_secret_iam_member`（シークレット単位）、
 > Cloud SQL は `google_project_iam_member`（プロジェクト単位）、画像バケットは
