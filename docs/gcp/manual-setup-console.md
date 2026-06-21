@@ -148,14 +148,51 @@ ON にしないとリソース作成が `API not enabled` で弾かれる。だ�
 
 コンソール: **Cloud Storage → バケット → 作成** を2回。どちらも均一アクセス、リージョン asia-northeast1。
 
-- `practice-gcp-stg-frontend`
-  - **ウェブサイト設定**: メインページ `index.html` / 404 ページ `index.html`（SPA フォールバック）
-  - **公開**: プリンシパル `allUsers` に **Storage オブジェクト閲覧者**
-- `practice-gcp-stg-images`
-  - **CORS**: オリジン `https://example-gcp.com`、メソッド `GET,HEAD`（仮ドメインは tfvars に合わせる）
-  - **公開**: `allUsers` に **Storage オブジェクト閲覧者**
+> **どちらも「ウェブサイト公開」＝ LB + Cloud CDN 経由の配信**であって、GCS ネイティブの
+> `*.storage.googleapis.com` ウェブサイトエンドポイントでの直接公開ではない（用語は [CONTEXT.md](../../CONTEXT.md)）。
+> 実際に HTTPS で配信されるには手順8〜11（LB・証明書・DNS）とビルド成果物のアップロードが別途必要。
 
-> `gcs.tf`。
+### 7-1. 両バケット共通の作成設定
+
+| 項目 | 値 |
+| --- | --- |
+| ロケーションの種類 | **Region** → `asia-northeast1` |
+| ストレージクラス | Standard（既定） |
+| アクセス制御 | **均一（Uniform）** |
+| 公開アクセスの防止 | **「このバケットに公開アクセス防止を適用する」のチェックを外す** ⚠️ |
+
+> ⚠️ 「公開アクセスの防止」は**既定でオン**。オンのままだと後続の `allUsers` 付与が拒否される。両バケットとも外す。
+> なぜ公開必須か: 外部 LB のバックエンドバケットは**オブジェクトが公開（`allUsers`）でないとオリジンを読めない**
+> 仕様で、GCP には CloudFront OAC 相当（オリジンを CDN 経由のみに絞る保護）がない。直接 egress 露出を承知で
+> 受容している（[ADR 0002](../adr/0002-public-backend-bucket-egress.md)）。
+
+### 7-2. `practice-gcp-stg-frontend`（React SPA 配信）
+
+1. **作成**: 名前 `practice-gcp-stg-frontend` + 7-1 共通設定。
+2. **ウェブサイト設定**: バケット一覧 → 行の **⋮ → 「ウェブサイト設定を編集」** →
+   インデックス ページ `index.html` / エラー（404）ページ `index.html`（SPA フォールバック）。
+   - 404 でも `index.html` を返し JS ルーターが処理する。**HTTP ステータスは 404 のまま**（200 化は
+     バックエンドバケットの custom error response policy が必要だが、本構成では採用しない）。
+3. **公開**: バケットを開く → **権限タブ → アクセスを許可** → プリンシパル `allUsers` /
+   ロール **Storage オブジェクト閲覧者**（`roles/storage.objectViewer`）→ 保存 → 「公開アクセスを許可」。
+4. **CORS は設定しない**: SPA 本体は自身と**同一オリジン**（`https://example-gcp.com`）から配られるため不要。
+
+### 7-3. `practice-gcp-stg-images`（QR / ユーザー画像配信）
+
+1. **作成**: 名前 `practice-gcp-stg-images` + 7-1 共通設定。
+2. **CORS は設定しない**: 画像は別ホスト `https://img.example-gcp.com` で配信され frontend とは別オリジンだが、
+   フロントは QR もアバターも**素の `<img src>` 表示のみ**（`fetch()` / `<canvas>` で中身を読まない）。
+   クロスオリジンの `<img>` 埋め込みは CORS を要求しないため不要。
+   - **CORS が要るのはどんな時か**（将来追加するなら）: SPA の JS が画像を `fetch()` で Blob 取得、
+     `<canvas>` に描画してピクセル読み取り／ダウンロード、等で**中身まで読む**場合。そのとき
+     `gcs.tf` に `cors{ origin=["https://<domain>"], method=["GET","HEAD"] }` を足す。
+3. **公開**: `allUsers` に **Storage オブジェクト閲覧者**（frontend と同じ手順）。
+
+> `gcs.tf`。frontend の `website{}`・両バケットの `allUsers` 付与（`google_storage_bucket_iam_member`）に対応。
+> **import 時の注意**: `imports.tf` の import ブロックは**バケット本体だけ**で、`allUsers` 付与には無い。
+> 付与リソースは `apply` 時に新規作成扱いになるが、`iam_member` は加算的なのでコンソールで付与済みでも
+> 競合せず冪等に収束する。ウェブサイト設定はバケット属性なので、手順2を飛ばしても `apply` が `.tf` の
+> `website{}` を入れて収束する（コンソール手順の安全網）。
 
 ## 8. Cloud Run サービス（マルチコンテナ）
 
