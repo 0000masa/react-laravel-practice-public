@@ -18,3 +18,9 @@ _Avoid_: 静的ウェブサイトホスティング（S3 static website hosting 
 **バックエンドバケット**:
 LB がバケットをオリジンとして扱うためのリソース（`google_compute_backend_bucket`）。
 frontend / images それぞれに 1 つずつ存在し、Cloud CDN を有効化している。
+
+**環境（stg / prod）**:
+同一 GCP プロジェクト内で**名前プレフィックス**（`practice-gcp-stg-*` / `practice-gcp-prod-*`）により分ける単位。
+ドメインとイメージレジストリ（Artifact Registry）は環境間で共有する。AWS 版と同じ構成。
+別プロジェクトに分離する方式は採らない（ドメイン/レジストリの分離・共有設定が必要になり大規模向けのため）。
+_Avoid_: プロジェクト分離（GCP プロジェクト ID は stg/prod で同一）
