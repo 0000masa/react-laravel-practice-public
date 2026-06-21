@@ -63,16 +63,25 @@ ON にしないとリソース作成が `API not enabled` で弾かれる。だ�
 
 > `apis.tf` の `google_project_service.apis`（for_each）に対応。import id は `<PROJECT_ID>/<service>`。
 
-## 3. Artifact Registry リポジトリ（2つ）
+## 3. Artifact Registry リポジトリ（2つ）※ Terraform 非管理（import しない）
 
 コンソール: **Artifact Registry → リポジトリを作成** を2回。
 
-| repository_id | 形式 | リージョン |
-| --- | --- | --- |
-| `nginx` | Docker | asia-northeast1 |
-| `laravel` | Docker | asia-northeast1 |
+| repository_id | 形式 | リージョン | イメージタグの変更不可 |
+| --- | --- | --- | --- |
+| `nginx` | Docker | asia-northeast1 | **有効（Immutable image tags）** |
+| `laravel` | Docker | asia-northeast1 | **有効（Immutable image tags）** |
 
-> `artifact_registry.tf` の `google_artifact_registry_repository.repos["nginx"|"laravel"]`。
+- 作成時に **「イメージタグの変更不可（Immutable image tags）」を有効**にする。sha タグの上書きを
+  レジストリ側で拒否し、タグを真にイミュータブルにする（`latest` のような移動タグは使わない）。
+- **import しない**。AR は `data "google_artifact_registry_repository"` で参照する Terraform **非管理**
+  リソース（AWS の ECR=data 参照に合わせる）。**最初の `terraform plan` より前に作成しておく**こと
+  （data は plan 時に読まれ、無いと失敗する）。
+
+> `artifact_registry.tf` の `data.google_artifact_registry_repository.repos["nginx"|"laravel"]`。
+> 非管理にした理由は [ADR 0003](../adr/0003-artifact-registry-unmanaged.md)。リポジトリ「への」push SA の
+> IAM 付与（`artifactregistry.writer`）は Terraform 管理のまま。タグの push / デプロイ運用は
+> [github-actions-image-push.md](./github-actions-image-push.md)。
 
 ## 4. Secret Manager（4 シークレット）
 
@@ -201,12 +210,20 @@ ON にしないとリソース作成が `API not enabled` で弾かれる。だ�
 - サービス名: `practice-gcp-stg-web` / リージョン: asia-northeast1
 - **Ingress**: 「内部 + Cloud Load Balancing」（= `INTERNAL_LOAD_BALANCING`）
 - **未認証の呼び出しを許可**（`allUsers` invoker。LB から到達させるため）
-- **コンテナ1（ingress）**: `nginx` イメージ（手順3のリポジトリ + GHA で push したタグ）、**ポート 80**
+- **コンテナ1（ingress）**: `nginx` イメージ（手順3のリポジトリ + GHA で push した sha タグ）、**ポート 80**
 - **コンテナ2（サイドカー）**: `laravel` イメージ。環境変数を `cloud_run.tf` の `run_env` どおりに設定し、
   シークレット参照（`APP_KEY` / `DB_PASSWORD` / `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`）を「最新」で紐付け
 - **接続 → Cloud SQL 接続** に `practice-gcp-stg-mysql` を追加（`/cloudsql/<接続名>` がマウントされる）
 - **サービスアカウント**: `practice-gcp-stg-run`
 - スケーリング: 最小 0 / 最大 2
+
+> **前提（イメージ）**: このサービス作成には **push 済みイメージが必須**。先に手順12 + push ワークフロー
+> （[github-actions-image-push.md](./github-actions-image-push.md)）でイメージを push し、`terraform.tfvars` の
+> `image_tag_*` にその sha を設定してから作成する（bootstrap）。
+>
+> **イメージ更新は Terraform ではなく GitHub Actions**: サービス/ジョブの image は `ignore_changes` 済みで、
+> `terraform apply` では更新されない。初回作成後のライブ更新は deploy ワークフロー
+> （`gcp-run-deploy-*.yml`）が唯一の経路（[ADR 0004](../adr/0004-cloudrun-deploy-via-gha.md)）。
 
 > `cloud_run.tf`。`DB_SOCKET` は `/cloudsql/<接続名>` を指す。`<接続名>` は SQL インスタンス詳細で確認。
 
@@ -274,6 +291,12 @@ ON にしないとリソース作成が `API not enabled` で弾かれる。だ�
 
 > `ci.tf`。作成・import 後、`terraform output wif_provider` と `gha_push_service_accounts` を
 > GitHub Secrets に登録する（[github-actions-image-push.md](./github-actions-image-push.md)）。
+>
+> **Cloud Run 更新用の deploy SA（`practice-gcp-stg-run-deployer`）はコンソール作成・import 不要**。
+> `ci.tf` の **Terraform 管理**で `terraform apply` 時に作られる（`run.developer` を web サービス / migrate
+> ジョブ単位、ランタイム SA への `serviceAccountUser`、WIF バインディングも一括）。apply 後に
+> `terraform output run_deploy_service_account` を GitHub Environments(stg/prod) の secret
+> `GCP_RUN_DEPLOY_SA` に登録する（[ADR 0004](../adr/0004-cloudrun-deploy-via-gha.md)）。
 
 ---
 
