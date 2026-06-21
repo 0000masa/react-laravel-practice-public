@@ -116,7 +116,32 @@ ON にしないとリソース作成が `API not enabled` で弾かれる。だ�
   - 各シークレット（4つ）に **Secret Manager のシークレット アクセサー**（シークレットの権限タブで付与）
   - 画像バケット（手順7）に **Storage オブジェクト管理者**（`roles/storage.objectAdmin`）
 
-> `service_account.tf`。
+> **「付与する場所」がそのままスコープになる（重要）**
+> GCP IAM の権限は `プリンシパル × ロール × リソース` のバインディングで、**リソース（または
+> project / folder / org の上位階層）側の IAM ポリシーに格納される**。GCP には「プリンシパル（SA）側に
+> ポリシーを貼る」概念が無いので、付与は常に**リソース側で行う**。したがって**どのリソースで付与するかが
+> そのまま権限スコープ**になる。
+>
+> - **シークレット アクセサーを各シークレットの「権限」タブで付与** → そのバインディングはそのシークレット
+>   1個にしか存在しない → **そのシークレットだけ**読める（＝最小権限）。**プロジェクトの IAM 画面**で
+>   同じロールを付けると**全シークレット**が読めてしまうので避ける。
+>   - 手順: Secret Manager → 対象シークレットを開く → **権限タブ → アクセスを許可** →
+>     プリンシパル `practice-gcp-stg-run@<PROJECT_ID>.iam.gserviceaccount.com`、ロール
+>     `roles/secretmanager.secretAccessor` → 保存。これを **4シークレット分**繰り返す。
+>   - 粒度はシークレット単位まで（特定バージョンだけには絞れない）。`secretAccessor` は**値の読み取り専用**。
+> - 同様に `Cloud SQL クライアント` は**プロジェクト**に、`Storage オブジェクト管理者` は**画像バケット単体**に
+>   付与している（手順7）。3つで付与先の階層が違うのは、それぞれ必要な最小スコープに合わせているため。
+>
+> **AWS との違い**: AWS は通常 **IAM ロール（プリンシパル側）に identity ポリシーを貼って終わり**で、
+> リソース側は触らない。リソース側のポリシー（S3 バケットポリシー / KMS キーポリシー / Secrets Manager の
+> リソースポリシー）は**任意の追加層**（Parameter Store には無い）。一方 **GCP はプリンシパル側に貼る手段が
+> 無く、リソース側 IAM が唯一の手段**。「SA にロールを付与」と「シークレット側で許可」は**別操作ではなく
+> 同じ1個のバインディング**であり、二重設定ではない。詳細は
+> [db-connection-aws-gcp.md](./db-connection-aws-gcp.md) も参照。
+
+> `service_account.tf`。シークレットは `google_secret_manager_secret_iam_member`（シークレット単位）、
+> Cloud SQL は `google_project_iam_member`（プロジェクト単位）、画像バケットは
+> `google_storage_bucket_iam_member`（バケット単位）と、付与先の差がそのままコードに出ている。
 
 ## 7. Cloud Storage バケット（frontend / images）
 
