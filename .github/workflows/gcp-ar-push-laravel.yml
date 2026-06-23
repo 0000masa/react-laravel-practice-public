@@ -1,0 +1,44 @@
+run-name: "gcp-ar-push-laravel.yml | tag=sha-${{ github.sha }}"
+
+# AWS 版 ecr-deploy-laravel.yml の GCP（Artifact Registry）版。
+# Workload Identity Federation で長期キーなし認証し、gcloud CLI を使わず
+# docker/login-action でアクセストークン認証して push する。
+on:
+  workflow_dispatch:
+
+env:
+  GCP_REGION: asia-northeast1
+  IMAGE_TAG: sha-${{ github.sha }}
+  AR_REPO: laravel
+
+jobs:
+  push:
+    name: push-laravel-to-artifact-registry
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write # WIF のトークン交換に必要
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_PUSH_LARAVEL_SA }}
+          token_format: access_token
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: build and push laravel image
+        env:
+          IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/laravel:${{ env.IMAGE_TAG }}
+        run: |
+          docker build -f ./docker/ecr/backend/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"

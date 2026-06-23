@@ -1,0 +1,79 @@
+run-name: "gcp-run-deploy-laravel.yml | env=${{ inputs.target_env }} / tag=${{ inputs.IMAGE_TAG_LARAVEL }}"
+
+# AWS 版 ecs-update-laravel.yml（+ db-task）の GCP（Cloud Run）版。
+# gcp-ar-push-laravel.yml で push 済みの laravel イメージで、
+#   1) migrate ジョブの image を更新
+#   2) マイグレーションを実行（完了待ち）
+#   3) Cloud Run サービスの laravel コンテナ「だけ」を更新
+# の順で行う（マイグレーション済み DB に新コードを載せる）。
+# Terraform はサービス/ジョブの image を ignore_changes しており、ライブイメージはこのワークフローが所有する。
+on:
+  workflow_dispatch:
+    inputs:
+      IMAGE_TAG_LARAVEL:
+        description: "laravel のイメージタグ（例 sha-xxxxxxx）"
+        required: true
+      target_env:
+        description: "デプロイ先環境"
+        type: choice
+        options:
+          - stg
+          - prod
+        required: true
+        default: stg
+
+env:
+  GCP_REGION: asia-northeast1
+  AR_REPO: laravel
+  SERVICE: practice-gcp-${{ inputs.target_env }}-web
+  JOB: practice-gcp-${{ inputs.target_env }}-migrate
+  CONTAINER: laravel
+  # IMAGE は secrets.GCP_PROJECT_ID を参照するため、ワークフローレベル env には置けない
+  # （secrets コンテキストはステップ env でのみ使用可）。各ステップで定義する。
+
+jobs:
+  deploy:
+    name: migrate-and-update-cloud-run-laravel
+    runs-on: ubuntu-latest
+    # GitHub Environment で環境別 secret（GCP_RUN_DEPLOY_SA）と保護ルール（prod 承認）を効かせる
+    environment: ${{ inputs.target_env }}
+
+    permissions:
+      id-token: write # WIF のトークン交換に必要
+      contents: read
+
+    steps:
+      # WIF でパスワードレス認証（deploy SA を impersonate）。ADC を gcloud に渡す。
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_RUN_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # 1) migrate ジョブのイメージを新タグに更新（ジョブは単一コンテナ）
+      - name: update migrate job image
+        env:
+          IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/laravel:${{ inputs.IMAGE_TAG_LARAVEL }}
+        run: |
+          gcloud run jobs update "$JOB" \
+            --region "$GCP_REGION" \
+            --image "$IMAGE"
+
+      # 2) マイグレーション実行（完了まで待つ。失敗したらここで止まりサービス更新に進まない）
+      - name: run migrations
+        run: |
+          gcloud run jobs execute "$JOB" \
+            --region "$GCP_REGION" \
+            --wait
+
+      # 3) サービスの laravel コンテナだけを部分更新（nginx・env・secret 等は保持）
+      - name: update laravel container image
+        env:
+          IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/laravel:${{ inputs.IMAGE_TAG_LARAVEL }}
+        run: |
+          gcloud run services update "$SERVICE" \
+            --region "$GCP_REGION" \
+            --container "$CONTAINER" \
+            --image "$IMAGE"

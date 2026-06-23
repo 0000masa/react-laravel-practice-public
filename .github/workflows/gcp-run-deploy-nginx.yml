@@ -1,0 +1,57 @@
+run-name: "gcp-run-deploy-nginx.yml | env=${{ inputs.target_env }} / tag=${{ inputs.IMAGE_TAG_NGINX }}"
+
+# AWS 版 ecs-update-nginx.yml の GCP（Cloud Run）版。
+# gcp-ar-push-nginx.yml で push 済みの nginx イメージで、Cloud Run サービスの
+# nginx コンテナ「だけ」を更新する（マルチコンテナの部分更新 = --container）。
+# Terraform はサービスの image を ignore_changes しており、ライブイメージはこのワークフローが所有する。
+on:
+  workflow_dispatch:
+    inputs:
+      IMAGE_TAG_NGINX:
+        description: "nginx のイメージタグ（例 sha-xxxxxxx）"
+        required: true
+      target_env:
+        description: "デプロイ先環境"
+        type: choice
+        options:
+          - stg
+          - prod
+        required: true
+        default: stg
+
+env:
+  GCP_REGION: asia-northeast1
+  AR_REPO: nginx
+  SERVICE: practice-gcp-${{ inputs.target_env }}-web
+  CONTAINER: nginx
+
+jobs:
+  deploy:
+    name: update-cloud-run-nginx
+    runs-on: ubuntu-latest
+    # GitHub Environment で環境別 secret（GCP_RUN_DEPLOY_SA）と保護ルール（prod 承認）を効かせる
+    environment: ${{ inputs.target_env }}
+
+    permissions:
+      id-token: write # WIF のトークン交換に必要
+      contents: read
+
+    steps:
+      # WIF でパスワードレス認証（deploy SA を impersonate）。ADC を gcloud に渡す。
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_RUN_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # マルチコンテナの nginx コンテナだけを部分更新（他コンテナ・env・secret 等は保持）
+      - name: update nginx container image
+        env:
+          IMAGE: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/nginx:${{ inputs.IMAGE_TAG_NGINX }}
+        run: |
+          gcloud run services update "$SERVICE" \
+            --region "$GCP_REGION" \
+            --container "$CONTAINER" \
+            --image "$IMAGE"

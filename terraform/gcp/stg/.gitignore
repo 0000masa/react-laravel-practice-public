@@ -1,0 +1,17 @@
+# === Terraform関連 ===
+
+# Terraform作業ディレクトリ（プロバイダなどが入る）
+.terraform/
+
+# 状態ファイル（tfstate）
+terraform.tfstate
+terraform.tfstate.backup
+
+# モジュールキャッシュ
+.terraform/modules/
+
+# プランファイル
+*.tfplan
+
+# 自動生成された config（-generate-config-out の出力）
+generated.tf
