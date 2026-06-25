@@ -2,7 +2,7 @@ run-name: "preview-create.yml | PR #${{ github.event.pull_request.number }}"
 
 # PR ごとの検証環境を作成/更新する。
 # `preview` ラベルが付いた PR の opened / synchronize(push) / reopened / labeled で発火。
-# 詳細: docs/pr-preview-environment.md
+# 詳細: docs/deploy/pr-preview-environment.md
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]

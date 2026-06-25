@@ -5,7 +5,7 @@ React SPA + Nginx + Laravel を S3 + CloudFront + ALB + ECS + RDS で配信す�
 ## Language
 
 **検証環境（preview 環境）**:
-PR ごとに専用サブドメイン `pr-<n>.preview.<domain>` へ立ち上げる、その PR のコードで動く使い捨ての本番相当フルスタック。`preview` ラベルで作成、PR クローズ/ラベル除去で破棄する。詳細は [docs/pr-preview-environment.md](../docs/pr-preview-environment.md)。
+PR ごとに専用サブドメイン `pr-<n>.preview.<domain>` へ立ち上げる、その PR のコードで動く使い捨ての本番相当フルスタック。`preview` ラベルで作成、PR クローズ/ラベル除去で破棄する。詳細は [docs/pr-preview-environment.md](../docs/deploy/pr-preview-environment.md)。
 _Avoid_: ステージング（stg は常設の共有環境で別物）、レビューアプリ
 
 **preview ユーザー**:

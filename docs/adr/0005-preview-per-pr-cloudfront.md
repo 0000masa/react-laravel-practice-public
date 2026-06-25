@@ -6,7 +6,7 @@ status: accepted
 
 ## 背景
 
-PR ごとの検証環境（[preview 環境](../pr-preview-environment.md)）で React SPA を配信する方式を検討した。本番は S3 + CloudFront（SPA）と ALB/ECS（`/api/*`）を分離した構成で、これを「本番相当の正式構成」としてテストしたい。
+PR ごとの検証環境（[preview 環境](../deploy/pr-preview-environment.md)）で React SPA を配信する方式を検討した。本番は S3 + CloudFront（SPA）と ALB/ECS（`/api/*`）を分離した構成で、これを「本番相当の正式構成」としてテストしたい。
 
 候補は 2 つあった。
 

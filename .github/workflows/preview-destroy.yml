@@ -3,7 +3,7 @@ run-name: "preview-destroy.yml | PR #${{ github.event.pull_request.number }}"
 # PR ごとの検証環境を破棄する。
 # PR クローズ（merge/close 両方）、または `preview` ラベル除去で発火。
 # 削除順序: ① DROP DATABASE（runner）→ ② terraform destroy
-# 詳細: docs/pr-preview-environment.md
+# 詳細: docs/deploy/pr-preview-environment.md
 on:
   pull_request:
     types: [closed, unlabeled]

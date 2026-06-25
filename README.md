@@ -142,7 +142,7 @@ npm run dev
 ```
 
 `backend/www` では `composer dev` を実行すると、開発サーバ・キューリスナー・ログ tail・Vite が並列起動します。
-詳細なローカルセットアップは [docs/environment_setup.md](docs/environment_setup.md) / [docs/mailpit_setup.md](docs/mailpit_setup.md) / [docs/minio_setup.md](docs/minio_setup.md) を参照してください。
+詳細なローカルセットアップは [docs/local-dev/environment_setup.md](docs/local-dev/environment_setup.md) / [docs/local-dev/mailpit_setup.md](docs/local-dev/mailpit_setup.md) / [docs/local-dev/minio_setup.md](docs/local-dev/minio_setup.md) を参照してください。
 
 ---
 
@@ -166,10 +166,10 @@ npm run dev
 
 設計上の主なポイントは以下を参照:
 
-- インフラ全体のコスト試算: [docs/aws-cost-estimation-verified.md](docs/aws-cost-estimation-verified.md)
-- ECS の設定変数設計: [docs/ecs-config-variables.md](docs/ecs-config-variables.md)
-- ECS タスクの IAM PassRole: [docs/iam_passrole_for_ecs.md](docs/iam_passrole_for_ecs.md)
-- モジュール分割のリファクタ: [docs/module-refactoring.md](docs/module-refactoring.md)
+- インフラ全体のコスト試算: [docs/aws-infra/aws-cost-estimation-verified.md](docs/aws-infra/aws-cost-estimation-verified.md)
+- ECS の設定変数設計: [docs/aws-infra/ecs-config-variables.md](docs/aws-infra/ecs-config-variables.md)
+- ECS タスクの IAM PassRole: [docs/aws-infra/iam_passrole_for_ecs.md](docs/aws-infra/iam_passrole_for_ecs.md)
+- モジュール分割のリファクタ: [docs/aws-infra/module-refactoring.md](docs/aws-infra/module-refactoring.md)
 
 ---
 
@@ -197,11 +197,11 @@ git push
 
 詳細は以下:
 
-- [docs/ecspresso-deployment-pipeline.md](docs/ecspresso-deployment-pipeline.md)
-- [docs/ecspresso-jsonnet-refactor.md](docs/ecspresso-jsonnet-refactor.md)
-- [docs/codedeploy_ecs_deployment.md](docs/codedeploy_ecs_deployment.md)
-- [docs/db-task-workflow.md](docs/db-task-workflow.md)
-- [docs/github_actions_secrets.md](docs/github_actions_secrets.md)
+- [docs/deploy/ecspresso-deployment-pipeline.md](docs/deploy/ecspresso-deployment-pipeline.md)
+- [docs/deploy/ecspresso-jsonnet-refactor.md](docs/deploy/ecspresso-jsonnet-refactor.md)
+- [docs/deploy/codedeploy_ecs_deployment.md](docs/deploy/codedeploy_ecs_deployment.md)
+- [docs/deploy/db-task-workflow.md](docs/deploy/db-task-workflow.md)
+- [docs/deploy/github_actions_secrets.md](docs/deploy/github_actions_secrets.md)
 
 ---
 
@@ -215,31 +215,31 @@ git push
 
 ### コスト / 全体設計
 
-- [aws-cost-estimation-verified.md](docs/aws-cost-estimation-verified.md) — AWS コスト試算
-- [module-refactoring.md](docs/module-refactoring.md) — Terraform モジュール分割のリファクタ
+- [aws-cost-estimation-verified.md](docs/aws-infra/aws-cost-estimation-verified.md) — AWS コスト試算
+- [module-refactoring.md](docs/aws-infra/module-refactoring.md) — Terraform モジュール分割のリファクタ
 
 ### デプロイ設計
 
-- [codedeploy_ecs_deployment.md](docs/codedeploy_ecs_deployment.md)
-- [ecspresso-deployment-pipeline.md](docs/ecspresso-deployment-pipeline.md)
-- [ecspresso-jsonnet-refactor.md](docs/ecspresso-jsonnet-refactor.md)
+- [codedeploy_ecs_deployment.md](docs/deploy/codedeploy_ecs_deployment.md)
+- [ecspresso-deployment-pipeline.md](docs/deploy/ecspresso-deployment-pipeline.md)
+- [ecspresso-jsonnet-refactor.md](docs/deploy/ecspresso-jsonnet-refactor.md)
 
 ### タスク / ジョブ
 
-- [batch_daily_report.md](docs/batch_daily_report.md) — 日次バッチ設計
-- [sqs_queue_qrcode.md](docs/sqs_queue_qrcode.md) — SQS 非同期 QR 生成
-- [db-task-workflow.md](docs/db-task-workflow.md) — DB 操作タスクの実行フロー
+- [batch_daily_report.md](docs/app/batch_daily_report.md) — 日次バッチ設計
+- [sqs_queue_qrcode.md](docs/app/sqs_queue_qrcode.md) — SQS 非同期 QR 生成
+- [db-task-workflow.md](docs/deploy/db-task-workflow.md) — DB 操作タスクの実行フロー
 
 ### 設定 / 環境
 
-- [ecs-config-variables.md](docs/ecs-config-variables.md)
-- [iam_passrole_for_ecs.md](docs/iam_passrole_for_ecs.md)
-- [environment_setup.md](docs/environment_setup.md)
-- [github_actions_secrets.md](docs/github_actions_secrets.md)
+- [ecs-config-variables.md](docs/aws-infra/ecs-config-variables.md)
+- [iam_passrole_for_ecs.md](docs/aws-infra/iam_passrole_for_ecs.md)
+- [environment_setup.md](docs/local-dev/environment_setup.md)
+- [github_actions_secrets.md](docs/deploy/github_actions_secrets.md)
 
 ### ローカル開発
 
-- [mailpit_setup.md](docs/mailpit_setup.md)
-- [minio_setup.md](docs/minio_setup.md)
-- [php_ini_review.md](docs/php_ini_review.md)
-- [php_fpm_config.md](docs/php_fpm_config.md)
+- [mailpit_setup.md](docs/local-dev/mailpit_setup.md)
+- [minio_setup.md](docs/local-dev/minio_setup.md)
+- [php_ini_review.md](docs/local-dev/php_ini_review.md)
+- [php_fpm_config.md](docs/local-dev/php_fpm_config.md)
