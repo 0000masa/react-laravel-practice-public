@@ -352,6 +352,55 @@ resource "aws_ecs_task_definition" "runner" {
 }
 
 # ---------------------------------------------------------------------
+# フロント配信用 S3 バケット（PR ごと）。terraform destroy でバケットごと削除される。
+# ---------------------------------------------------------------------
+resource "aws_s3_bucket" "frontend" {
+  bucket        = "${local.name}-frontend"
+  force_destroy = true
+  tags = {
+    Name = "${local.name}-frontend"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "frontend" {
+  bucket                  = aws_s3_bucket.frontend.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_cloudfront_origin_access_control" "frontend" {
+  name                              = "${local.name}-frontend-oac"
+  description                       = "OAC for ${local.name} frontend bucket"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+# 本番同様、このPRの CloudFront からのみ読み取りを許可（SourceArn で厳格化）
+resource "aws_s3_bucket_policy" "frontend" {
+  bucket = aws_s3_bucket.frontend.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowCloudFrontServicePrincipalReadOnly"
+        Effect    = "Allow"
+        Principal = { Service = "cloudfront.amazonaws.com" }
+        Action    = "s3:GetObject"
+        Resource  = "${aws_s3_bucket.frontend.arn}/*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = aws_cloudfront_distribution.this.arn
+          }
+        }
+      }
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------
 # CloudFront（PR ごと）。viewer = pr-<n>.preview.<domain>
 # ---------------------------------------------------------------------
 resource "aws_cloudfront_distribution" "this" {
@@ -362,12 +411,11 @@ resource "aws_cloudfront_distribution" "this" {
   aliases             = [local.subdomain]
   web_acl_id          = local.s.preview_waf_web_acl_arn
 
-  # フロント（共有バケット + PR ごとのプレフィックス）
+  # フロント（PR ごとのバケット。ルートに配置するので origin_path 不要）
   origin {
-    domain_name              = local.s.preview_frontend_bucket_regional_domain_name
+    domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_id                = "s3-frontend"
-    origin_access_control_id = local.s.preview_frontend_oac_id
-    origin_path              = "/pr-${var.pr_number}"
+    origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
   }
 
   # API（共有 ALB オリジン）。X-CloudFront-Secret を注入し、Host は all_viewer で転送。

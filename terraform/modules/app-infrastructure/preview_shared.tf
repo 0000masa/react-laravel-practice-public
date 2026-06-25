@@ -88,56 +88,8 @@ resource "aws_route53_record" "preview_api_origin" {
   }
 }
 
-# ---------------------------------------------------------------------
-# 共有 frontend バケット（PR ごとに pr-<n>/ プレフィックスで SPA を配置）
-# ---------------------------------------------------------------------
-resource "aws_s3_bucket" "preview_frontend" {
-  bucket        = "${var.project_name}-preview-frontend"
-  force_destroy = true
-  tags = {
-    Name = "${var.project_name}-preview-frontend"
-  }
-}
-
-resource "aws_s3_bucket_public_access_block" "preview_frontend" {
-  bucket                  = aws_s3_bucket.preview_frontend.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-# OAC は共有 1 つ。PR ごとの CloudFront からも使う。
-resource "aws_cloudfront_origin_access_control" "preview_frontend" {
-  name                              = "${var.project_name}-preview-frontend-oac"
-  description                       = "OAC for preview frontend bucket"
-  origin_access_control_origin_type = "s3"
-  signing_behavior                  = "always"
-  signing_protocol                  = "sigv4"
-}
-
-# バケットポリシーは SourceAccount 条件でアカウント内 CloudFront を一括許可。
-# → PR ごとのディストリビューション追加でポリシー編集が不要になる。
-resource "aws_s3_bucket_policy" "preview_frontend" {
-  bucket = aws_s3_bucket.preview_frontend.id
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "AllowCloudFrontServicePrincipalReadOnly"
-        Effect    = "Allow"
-        Principal = { Service = "cloudfront.amazonaws.com" }
-        Action    = "s3:GetObject"
-        Resource  = "${aws_s3_bucket.preview_frontend.arn}/*"
-        Condition = {
-          StringEquals = {
-            "AWS:SourceAccount" = data.aws_caller_identity.current.account_id
-          }
-        }
-      }
-    ]
-  })
-}
+# frontend バケットは PR ごとに pr-env が作る（terraform/pr-env/main.tf）。
+# destroy でバケットごと中身も消えるよう per-PR にした。共有バケットは持たない。
 
 # ---------------------------------------------------------------------
 # WAF Web ACL（Basic 認証） — CLOUDFRONT scope（us-east-1）
@@ -302,10 +254,12 @@ resource "aws_iam_policy" "preview_deploy" {
         Resource = "*"
       },
       {
-        Sid      = "S3PreviewFrontend"
+        # PR ごとの frontend バケットを作成/削除/操作する（命名は <project>-preview-pr*）。
+        # 範囲を preview-pr* バケットに限定したうえで s3:* を許可（作成/ポリシー/アップロード一式）。
+        Sid      = "S3PreviewBuckets"
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"]
-        Resource = [aws_s3_bucket.preview_frontend.arn, "${aws_s3_bucket.preview_frontend.arn}/*"]
+        Action   = ["s3:*"]
+        Resource = ["arn:aws:s3:::${var.project_name}-preview-pr*", "arn:aws:s3:::${var.project_name}-preview-pr*/*"]
       },
       {
         Sid      = "Logs"

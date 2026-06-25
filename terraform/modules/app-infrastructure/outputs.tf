@@ -93,18 +93,6 @@ output "preview_cf_certificate_arn" {
   value       = aws_acm_certificate_validation.preview_cf.certificate_arn
 }
 
-output "preview_frontend_bucket" {
-  value = aws_s3_bucket.preview_frontend.bucket
-}
-
-output "preview_frontend_bucket_regional_domain_name" {
-  value = aws_s3_bucket.preview_frontend.bucket_regional_domain_name
-}
-
-output "preview_frontend_oac_id" {
-  value = aws_cloudfront_origin_access_control.preview_frontend.id
-}
-
 output "preview_waf_web_acl_arn" {
   description = "Basic 認証 WAF Web ACL（CLOUDFRONT scope）。各 PR の CloudFront に関連付ける。"
   value       = aws_wafv2_web_acl.preview_basic_auth.arn

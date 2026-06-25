@@ -9,7 +9,7 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
    │  https://pr-<n>.preview.example.com   (Basic 認証 = WAF)
    ▼
 [CloudFront：PR ごとに 1 枚]
-   ├─ /            → S3 frontend(共有バケット)/pr-<n>/   ← SPA を origin_path で配信
+   ├─ /            → S3 frontend(PRごとバケット)         ← SPA を配信（バケットのルート）
    └─ /api/*       → origin: preview-api.example.com(共有/ALB)
                       ・X-CloudFront-Secret を注入（本番同様の 403 ゲート）
                       ・all_viewer ポリシーで Host(pr-<n>.preview...) を ALB に転送
@@ -43,8 +43,8 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 | runner タスク定義 | **PR ごと** | `preview-pr<n>-runner`（PR イメージ・`DB_DATABASE=preview_pr<n>`・`DB_USERNAME=preview` を焼き込み） |
 | RDS database | **PR ごと** | `preview_pr<n>`（共通インスタンス上） |
 | IAM タスクロール | **PR ごと** | `/preview/` パス + Permissions Boundary 必須 |
-| 画像 S3 バケット + 画像 CloudFront | **共有(1 回作成)** | QR 画像は uniqid 付きで衝突せず混在無害 |
-| frontend S3 バケット | **共有** | `pr-<n>/` プレフィックスで分離、CloudFront の `origin_path=/pr-<n>` |
+| 画像 S3 バケット + 画像 CloudFront | **共有（既存 stg を再利用）** | QR 画像は uniqid 付きで衝突せず混在無害 |
+| frontend S3 バケット | **PR ごと** | `preview-pr<n>-frontend`。当該 CloudFront のオリジン。`destroy` でバケットごと中身も削除（消し残りなし） |
 | `preview-api` Route53 → ALB | **共有** | 全 PR CloudFront の `/api` オリジン |
 | ワイルドカード ACM 証明書 | **共有(1 回作成)** | `*.preview.example.com`（CloudFront 用は us-east-1、ALB 用は ap-northeast-1） |
 | WAF Web ACL(Basic 認証) | **共有(1 回作成, us-east-1)** | 各 PR CloudFront に関連付け |
@@ -77,8 +77,8 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 
 1. **同時上限チェック**: 既存 preview が 20 個以上ならワークフローを fail（ALB のルール/ターゲットグループ枠の保護）。
 2. **イメージ build & ECR push**: PR のコードで nginx / laravel イメージ（本番と同じ）をビルドし、PR 固有タグで push。
-3. **frontend を S3 へ**: フロントを `VITE_API_BASE_URL` 未設定（＝相対 `/api`）でビルドし、共有バケットの `pr-<n>/` プレフィックスへアップロード。
-4. **`terraform apply`**（`terraform/pr-env/`、backend キー = PR 番号）: CloudFront・Route53(viewer)・TG・リスナールール・ECS web/worker サービス・SQS・runner タスク定義・per-PR IAM ロールを作成。
+3. **`terraform apply`**（`terraform/pr-env/`、backend キー = PR 番号）: frontend バケット・CloudFront・Route53(viewer)・TG・リスナールール・ECS web/worker サービス・SQS・runner タスク定義・per-PR IAM ロールを作成。
+4. **frontend を S3 へ**: フロントを `VITE_API_BASE_URL` 未設定（＝相対 `/api`）・`VITE_AUTH_MODE=password` でビルドし、PR ごとのバケット（ルート）へアップロード。
 5. **DB 準備**（runner タスクを `aws ecs run-task` / `db-task.yml` の仕組みを流用）:
    `CREATE DATABASE preview_pr<n>` → `php artisan migrate --force` → `php artisan db:seed --force`。
    - preview ユーザーは `GRANT ALL ON \`preview\_%\`.*` を持つので、**自分で CREATE/DROP できる**（master 権限は不要）。
@@ -100,7 +100,7 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 1. **SSM パラメータを作成**（`/practice/stg/` 配下、SecureString）:
    - `preview_db_password` — preview MySQL ユーザーのパスワード。
    - `preview_basic_auth_b64` — Basic 認証資格情報の base64（`printf 'user:pass' | base64`）。
-2. **共有リソースを apply**: `terraform/stg` を apply すると preview 共有リソース（ワイルドカード ACM・WAF・共有 frontend バケット・Permissions Boundary・preview デプロイロール）と output が作られる。
+2. **共有リソースを apply**: `terraform/stg` を apply すると preview 共有リソース（ワイルドカード ACM・WAF・`api.preview`→ALB・Permissions Boundary・preview デプロイロール）と output が作られる。frontend バケットは PR ごとに pr-env が作るのでここには含まれない。
 3. **preview MySQL ユーザーを作成**（`db-task.yml` の `shell` モードで 1 回）:
    ```sql
    CREATE USER 'preview'@'%' IDENTIFIED BY '<preview_db_password>';

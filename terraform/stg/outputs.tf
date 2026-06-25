@@ -28,9 +28,6 @@ output "aws_account_id" { value = module.app.aws_account_id }
 
 # --- preview 共有リソース ---
 output "preview_cf_certificate_arn" { value = module.app.preview_cf_certificate_arn }
-output "preview_frontend_bucket" { value = module.app.preview_frontend_bucket }
-output "preview_frontend_bucket_regional_domain_name" { value = module.app.preview_frontend_bucket_regional_domain_name }
-output "preview_frontend_oac_id" { value = module.app.preview_frontend_oac_id }
 output "preview_waf_web_acl_arn" { value = module.app.preview_waf_web_acl_arn }
 output "preview_permissions_boundary_arn" { value = module.app.preview_permissions_boundary_arn }
 output "preview_deploy_role_arn" { value = module.app.preview_deploy_role_arn }

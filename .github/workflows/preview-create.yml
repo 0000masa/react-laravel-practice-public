@@ -101,10 +101,9 @@ jobs:
         run: |
           set -euo pipefail
           BUCKET=$(terraform output -raw preview_frontend_bucket)
-          PREFIX=$(terraform output -raw pr_prefix)
           # preview はパスワードログイン。API は相対 /api（VITE_API_BASE_URL 未設定）。
           (cd ../../frontend/www && npm ci && VITE_AUTH_MODE=password npm run build)
-          aws s3 sync ../../frontend/www/dist "s3://${BUCKET}/${PREFIX}/" --delete
+          aws s3 sync ../../frontend/www/dist "s3://${BUCKET}/" --delete
 
       # DB: CREATE DATABASE → migrate → seed（PR イメージの runner タスクで）
       - name: Prepare database (create / migrate / seed)

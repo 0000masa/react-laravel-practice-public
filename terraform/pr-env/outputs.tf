@@ -26,10 +26,6 @@ output "ecs_security_group_id" {
 }
 
 output "preview_frontend_bucket" {
-  description = "共有 frontend バケット（このPRは pr-<n>/ プレフィックスへアップロード）"
-  value       = local.s.preview_frontend_bucket
-}
-
-output "pr_prefix" {
-  value = "pr-${var.pr_number}"
+  description = "このPR専用の frontend バケット（ルートへアップロード）"
+  value       = aws_s3_bucket.frontend.bucket
 }
