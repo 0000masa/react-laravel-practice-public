@@ -1,18 +1,27 @@
 <?php
 
 use App\Http\Controllers\Auth\GoogleAuthController;
+use App\Http\Controllers\Auth\PasswordAuthController;
 use App\Http\Controllers\MailController;
 use App\Http\Controllers\QrCodeController;
 use App\Http\Controllers\QrCodeQueueController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
-// Google認証関連のルート
+// 認証関連のルート
 Route::prefix('auth')->group(function () {
-    // Google認証URLを取得
-    Route::get('/google', [GoogleAuthController::class, 'redirect']);
-    // Google認証コールバック
-    Route::get('/google/callback', [GoogleAuthController::class, 'callback']);
+    // Google認証ルートは AUTH_GOOGLE_ENABLED=false（preview 環境など）で無効化する。
+    // preview では承認済みリダイレクト URI を PR ごとに登録できないため。
+    if (config('services.google.enabled')) {
+        // Google認証URLを取得
+        Route::get('/google', [GoogleAuthController::class, 'redirect']);
+        // Google認証コールバック
+        Route::get('/google/callback', [GoogleAuthController::class, 'callback']);
+    }
+
+    // メール+パスワードによるログイン（preview のテストユーザー用。本番でもパスワード保有ユーザーは利用可）
+    Route::post('/login', [PasswordAuthController::class, 'login']);
+
     // 認証済みユーザー情報を取得
     Route::get('/user', [GoogleAuthController::class, 'user'])->middleware('auth:web');
     // ログアウト

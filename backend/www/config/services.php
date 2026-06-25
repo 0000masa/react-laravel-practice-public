@@ -36,6 +36,9 @@ return [
     ],
 
     'google' => [
+        // preview 環境では Google の承認済みリダイレクト URI を
+        // PR ごとに登録できないため、env で無効化できるようにする。
+        'enabled' => filter_var(env('AUTH_GOOGLE_ENABLED', true), FILTER_VALIDATE_BOOL),
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
         'redirect' => env('GOOGLE_REDIRECT_URI'),

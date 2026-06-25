@@ -19,8 +19,9 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
         条件: host-header = pr-<n>.preview.example.com かつ X-CloudFront-Secret 一致
         → forward: preview-pr<n>-tg
    ▼
-[ECS service: preview-pr<n>-web]  (react-nginx + laravel, desired_count=1, Fargate Spot)
-   └─ /api を同居 laravel-fpm へ、それ以外は SPA を配信
+[ECS service: preview-pr<n>-web]  (nginx + laravel, desired_count=1, Fargate Spot)
+   └─ 本番と同じ proxy 構成。nginx は /api を laravel-fpm へ中継するのみ。
+      SPA は ECS では配信しない（S3/CloudFront 経由）。
    ▼
 [共通 RDS(stg と同一インスタンス)] → database: preview_pr<n>（preview ユーザーで接続）
 ```
@@ -37,7 +38,7 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 | Route53 A/AAAA レコード(viewer) | **PR ごと** | `pr-<n>.preview` → 当該 CloudFront |
 | ALB ターゲットグループ | **PR ごと** | `preview-pr<n>-tg` / health `GET /api/health` / target-type ip |
 | ALB リスナールール | **PR ごと** | priority `20000 + n` / 条件: host + X-CloudFront-Secret |
-| ECS web サービス + タスク定義 | **PR ごと** | `preview-pr<n>-web`（react-nginx + laravel） |
+| ECS web サービス + タスク定義 | **PR ごと** | `preview-pr<n>-web`（本番と同じ nginx + laravel。SPA は S3/CloudFront 配信） |
 | ECS queue-worker + SQS キュー | **PR ごと** | `preview-pr<n>-qrcode-generation`（ジョブ取り違え防止に分離必須） |
 | runner タスク定義 | **PR ごと** | `preview-pr<n>-runner`（PR イメージ・`DB_DATABASE=preview_pr<n>`・`DB_USERNAME=preview` を焼き込み） |
 | RDS database | **PR ごと** | `preview_pr<n>`（共通インスタンス上） |
@@ -75,8 +76,8 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 トリガー: `pull_request: [opened, synchronize, labeled, reopened]`、条件 = **`preview` ラベルが付いた PR のみ**。
 
 1. **同時上限チェック**: 既存 preview が 20 個以上ならワークフローを fail（ALB のルール/ターゲットグループ枠の保護）。
-2. **イメージ build & ECR push**: PR のコードで react-nginx（フロント焼き込み・`VITE_API_BASE_URL` 未設定）/ laravel イメージをビルドし、PR 固有タグで push。
-3. **frontend を S3 へ**: ビルド成果物を共有バケットの `pr-<n>/` プレフィックスへアップロード。
+2. **イメージ build & ECR push**: PR のコードで nginx / laravel イメージ（本番と同じ）をビルドし、PR 固有タグで push。
+3. **frontend を S3 へ**: フロントを `VITE_API_BASE_URL` 未設定（＝相対 `/api`）でビルドし、共有バケットの `pr-<n>/` プレフィックスへアップロード。
 4. **`terraform apply`**（`terraform/pr-env/`、backend キー = PR 番号）: CloudFront・Route53(viewer)・TG・リスナールール・ECS web/worker サービス・SQS・runner タスク定義・per-PR IAM ロールを作成。
 5. **DB 準備**（runner タスクを `aws ecs run-task` / `db-task.yml` の仕組みを流用）:
    `CREATE DATABASE preview_pr<n>` → `php artisan migrate --force` → `php artisan db:seed --force`。
@@ -93,6 +94,23 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 2. **`terraform destroy`**（backend キー = PR 番号）: CloudFront・Route53・TG・ルール・ECS・SQS・per-PR IAM ロールを一括削除。CloudFront は disable→削除待ちで時間がかかるため、ワークフローのタイムアウトは長めに設定。
 
 > 夜間リーパー（孤児回収 cron）は採用しない。destroy が失敗した場合は手動で `terraform destroy` 再実行 + runner で `DROP DATABASE` を行って回収する。
+
+## 初回セットアップ（手動・1 回だけ）
+
+1. **SSM パラメータを作成**（`/practice/stg/` 配下、SecureString）:
+   - `preview_db_password` — preview MySQL ユーザーのパスワード。
+   - `preview_basic_auth_b64` — Basic 認証資格情報の base64（`printf 'user:pass' | base64`）。
+2. **共有リソースを apply**: `terraform/stg` を apply すると preview 共有リソース（ワイルドカード ACM・WAF・共有 frontend バケット・Permissions Boundary・preview デプロイロール）と output が作られる。
+3. **preview MySQL ユーザーを作成**（`db-task.yml` の `shell` モードで 1 回）:
+   ```sql
+   CREATE USER 'preview'@'%' IDENTIFIED BY '<preview_db_password>';
+   GRANT ALL PRIVILEGES ON `preview\_%`.* TO 'preview'@'%';
+   ```
+4. **GitHub 設定**:
+   - Secret: `AWS_PREVIEW_DEPLOY_ROLE_ARN`（output `preview_deploy_role_arn`）、`PREVIEW_MAIL_REDIRECT_TO`。
+   - Environment `preview` を作成し、保護ルール（maintainer 承認など）を設定。
+   - ラベル `preview` を作成。
+5. **アプリの env（stg/preview 共通の挙動）**: `AUTH_GOOGLE_ENABLED`（preview は false）、`MAIL_PREVIEW_REDIRECT_TO`、フロントは `VITE_AUTH_MODE=password`（preview ビルド時）。
 
 ## 既知の制約・前提
 

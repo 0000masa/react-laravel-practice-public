@@ -115,4 +115,17 @@ return [
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Preview / Staging Redirect Address
+    |--------------------------------------------------------------------------
+    |
+    | staging / preview 環境で全メールの宛先を上書きする固定アドレス。
+    | AppServiceProvider::boot() が Mail::alwaysTo() で利用する。
+    | 未設定(null)なら上書きしない。
+    |
+    */
+
+    'preview_redirect_to' => env('MAIL_PREVIEW_REDIRECT_TO'),
+
 ];

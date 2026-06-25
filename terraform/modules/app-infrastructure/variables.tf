@@ -13,6 +13,12 @@ variable "github_environment_name" {
   type        = string
 }
 
+variable "preview_github_environment_name" {
+  description = "preview デプロイロールの AssumeRole を許可する GitHub Environment 名（OIDC sub: repo:OWNER/REPO:environment:NAME）。"
+  type        = string
+  default     = "preview"
+}
+
 variable "github_allowed_branches" {
   description = <<-EOT
     environment 別 GitHub Actions ロール（ECS update / db_runner / s3_deploy_frontend / ecspresso）
