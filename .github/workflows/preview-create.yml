@@ -1,0 +1,157 @@
+run-name: "preview-create.yml | PR #${{ github.event.pull_request.number }}"
+
+# PR ごとの検証環境を作成/更新する。
+# `preview` ラベルが付いた PR の opened / synchronize(push) / reopened / labeled で発火。
+# 詳細: docs/pr-preview-environment.md
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: ap-northeast-1
+  ECR_REPO_LARAVEL: react-laravel-practice-laravel-ecs
+  ECR_REPO_NGINX: react-laravel-practice-nginx-ecs
+  MAX_PREVIEWS: "20"
+  STATE_BUCKET: github-action-terraform-tf-state-bucket
+
+jobs:
+  preview:
+    # `preview` ラベルが付いた PR のみ
+    if: contains(github.event.pull_request.labels.*.name, 'preview')
+    runs-on: ubuntu-latest
+    environment: preview
+    defaults:
+      run:
+        working-directory: ./terraform/pr-env
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      IMAGE_TAG: sha-${{ github.event.pull_request.head.sha }}
+      TF_STATE_KEY: preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # PR の HEAD（実コード）でイメージをビルドする
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PREVIEW_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 同時 preview 数の上限チェック（state オブジェクト数で判定）
+      - name: Enforce concurrent preview cap
+        run: |
+          set -euo pipefail
+          COUNT=$(aws s3 ls "s3://${STATE_BUCKET}/preview/" | grep -c "PRE pr-" || true)
+          EXISTS=$(aws s3 ls "s3://${STATE_BUCKET}/preview/pr-${PR_NUMBER}/" || true)
+          if [ -z "$EXISTS" ] && [ "$COUNT" -ge "${MAX_PREVIEWS}" ]; then
+            echo "::error::同時 preview 数が上限 (${MAX_PREVIEWS}) に達しています (現在 ${COUNT})。"
+            exit 1
+          fi
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push images (nginx / laravel)
+        working-directory: .
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          docker build -f ./docker/ecr/backend/Dockerfile -t "$ECR_REGISTRY/${ECR_REPO_LARAVEL}:${IMAGE_TAG}" .
+          docker push "$ECR_REGISTRY/${ECR_REPO_LARAVEL}:${IMAGE_TAG}"
+          docker build -f ./docker/ecr/nginx/Dockerfile -t "$ECR_REGISTRY/${ECR_REPO_NGINX}:${IMAGE_TAG}" .
+          docker push "$ECR_REGISTRY/${ECR_REPO_NGINX}:${IMAGE_TAG}"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.3"
+
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config=pr-env.tfbackend \
+            -backend-config="key=${TF_STATE_KEY}"
+
+      - name: Terraform Apply
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var="pr_number=${PR_NUMBER}" \
+            -var="image_tag_nginx=${IMAGE_TAG}" \
+            -var="image_tag_laravel=${IMAGE_TAG}" \
+            -var="mail_preview_redirect_to=${{ secrets.PREVIEW_MAIL_REDIRECT_TO }}"
+
+      # フロントを相対 /api（VITE_API_BASE_URL 未設定）でビルドし、共有バケットの pr-<n>/ へ
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Capture outputs
+        run: |
+          echo "PREVIEW_URL=$(terraform output -raw preview_url)" >> "$GITHUB_ENV"
+
+      - name: Build & upload frontend
+        run: |
+          set -euo pipefail
+          BUCKET=$(terraform output -raw preview_frontend_bucket)
+          PREFIX=$(terraform output -raw pr_prefix)
+          # preview はパスワードログイン。API は相対 /api（VITE_API_BASE_URL 未設定）。
+          (cd ../../frontend/www && npm ci && VITE_AUTH_MODE=password npm run build)
+          aws s3 sync ../../frontend/www/dist "s3://${BUCKET}/${PREFIX}/" --delete
+
+      # DB: CREATE DATABASE → migrate → seed（PR イメージの runner タスクで）
+      - name: Prepare database (create / migrate / seed)
+        run: |
+          set -euo pipefail
+          CLUSTER=$(terraform output -raw ecs_cluster_arn)
+          TASKDEF=$(terraform output -raw runner_task_definition_family)
+          SUBNETS=$(terraform output -json private_subnet_ids | jq -r 'join(",")')
+          SG=$(terraform output -raw ecs_security_group_id)
+          DB=$(terraform output -raw db_database)
+
+          NETCFG="awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SG}],assignPublicIp=DISABLED}"
+
+          # DB_DATABASE を選択せずに接続し CREATE DATABASE する PHP ワンライナー
+          CREATE_PHP='$h=getenv("DB_HOST");$u=getenv("DB_USERNAME");$p=getenv("DB_PASSWORD");$d=getenv("DB_DATABASE");$pdo=new PDO("mysql:host=$h",$u,$p);$pdo->exec("CREATE DATABASE IF NOT EXISTS `$d`");echo "created $d\n";'
+
+          run_runner() {
+            local cmd_json="$1"
+            local overrides
+            overrides=$(jq -nc --argjson cmd "$cmd_json" '{containerOverrides:[{name:"runner-container",command:$cmd}]}')
+            local arn
+            arn=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASKDEF" \
+              --launch-type FARGATE \
+              --network-configuration "$NETCFG" \
+              --overrides "$overrides" \
+              --query "tasks[0].taskArn" --output text)
+            echo "task: $arn"
+            aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$arn"
+            local code
+            code=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$arn" \
+              --query "tasks[0].containers[0].exitCode" --output text)
+            echo "exit code: $code"
+            [ "$code" = "0" ]
+          }
+
+          run_runner "$(jq -nc --arg p "$CREATE_PHP" '["php","-r",$p]')"
+          run_runner '["php","artisan","migrate","--force"]'
+          run_runner '["php","artisan","db:seed","--force"]'
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = process.env.PREVIEW_URL;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `🚀 検証環境を更新しました: ${url}\n(Basic 認証で保護されています)`,
+            });

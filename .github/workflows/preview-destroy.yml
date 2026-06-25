@@ -1,0 +1,85 @@
+run-name: "preview-destroy.yml | PR #${{ github.event.pull_request.number }}"
+
+# PR ごとの検証環境を破棄する。
+# PR クローズ（merge/close 両方）、または `preview` ラベル除去で発火。
+# 削除順序: ① DROP DATABASE（runner）→ ② terraform destroy
+# 詳細: docs/pr-preview-environment.md
+on:
+  pull_request:
+    types: [closed, unlabeled]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ap-northeast-1
+
+jobs:
+  destroy:
+    # closed: preview ラベルが付いていた PR のみ / unlabeled: 外したラベルが preview のときのみ
+    if: >
+      (github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'preview')) ||
+      (github.event.action == 'unlabeled' && github.event.label.name == 'preview')
+    runs-on: ubuntu-latest
+    environment: preview
+    defaults:
+      run:
+        working-directory: ./terraform/pr-env
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TF_STATE_KEY: preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PREVIEW_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.3"
+
+      - name: Terraform Init
+        run: |
+          terraform init -input=false \
+            -backend-config=pr-env.tfbackend \
+            -backend-config="key=${TF_STATE_KEY}"
+
+      # ① DROP DATABASE（terraform destroy 前。runner タスク定義がまだ存在するうちに）
+      - name: Drop database
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          CLUSTER=$(terraform output -raw ecs_cluster_arn)
+          TASKDEF=$(terraform output -raw runner_task_definition_family)
+          SUBNETS=$(terraform output -json private_subnet_ids | jq -r 'join(",")')
+          SG=$(terraform output -raw ecs_security_group_id)
+          NETCFG="awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SG}],assignPublicIp=DISABLED}"
+
+          DROP_PHP='$h=getenv("DB_HOST");$u=getenv("DB_USERNAME");$p=getenv("DB_PASSWORD");$d=getenv("DB_DATABASE");$pdo=new PDO("mysql:host=$h",$u,$p);$pdo->exec("DROP DATABASE IF EXISTS `$d`");echo "dropped $d\n";'
+          OVERRIDES=$(jq -nc --arg p "$DROP_PHP" '{containerOverrides:[{name:"runner-container",command:["php","-r",$p]}]}')
+
+          ARN=$(aws ecs run-task --cluster "$CLUSTER" --task-definition "$TASKDEF" \
+            --launch-type FARGATE --network-configuration "$NETCFG" \
+            --overrides "$OVERRIDES" --query "tasks[0].taskArn" --output text)
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$ARN"
+          aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$ARN" \
+            --query "tasks[0].containers[0].exitCode" --output text
+
+      # ② terraform destroy（CloudFront/TG/ルール/ECS/SQS/IAM/Route53 を一括削除）
+      # CloudFront の無効化→削除待ちで時間がかかるため lifecycle に注意。image tag 等は destroy では実体不要。
+      - name: Terraform Destroy
+        run: |
+          terraform destroy -auto-approve -input=false \
+            -var="pr_number=${PR_NUMBER}" \
+            -var="image_tag_nginx=destroy" \
+            -var="image_tag_laravel=destroy" \
+            -var="mail_preview_redirect_to=destroy"
+
+      # state オブジェクトを削除（空の state を残さない）
+      - name: Remove state object
+        run: |
+          aws s3 rm "s3://github-action-terraform-tf-state-bucket/${TF_STATE_KEY}" || true
