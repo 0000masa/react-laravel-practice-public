@@ -98,8 +98,8 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 ## 初回セットアップ（手動・1 回だけ）
 
 1. **SSM パラメータを作成**（`/practice/stg/` 配下、SecureString）:
-   - `preview_db_password` — preview MySQL ユーザーのパスワード。
-   - `preview_basic_auth_b64` — Basic 認証資格情報の base64（`printf 'user:pass' | base64`）。
+   - `preview_db_password` — preview MySQL ユーザーのパスワード。誰も手入力しない機械用シークレットなので、強度優先でランダム生成する（記号のエスケープ事故を避けるため hex 推奨: `openssl rand -hex 32`）。
+   - `preview_basic_auth` — Basic 認証資格情報を**生の `user:pass` 形式**で入れる（例: `preview:<ランダム生成したパスワード>`）。base64 化は WAF 側で `base64encode()` するので、ここに base64 後の値は入れない（手動 base64 時の末尾改行混入事故も防げる）。
 2. **共有リソースを apply**: `terraform/stg` を apply すると preview 共有リソース（ワイルドカード ACM・WAF・`api.preview`→ALB・Permissions Boundary・preview デプロイロール）と output が作られる。frontend バケットは PR ごとに pr-env が作るのでここには含まれない。
 3. **preview MySQL ユーザーを作成**（`db-task.yml` の `shell` モードで 1 回）:
    ```sql
@@ -108,6 +108,10 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
    ```
 4. **GitHub 設定**:
    - Secret: `AWS_PREVIEW_DEPLOY_ROLE_ARN`（output `preview_deploy_role_arn`）、`PREVIEW_MAIL_REDIRECT_TO`。
+     - `AWS_PREVIEW_DEPLOY_ROLE_ARN` 例（アカウントID はダミー `123456789012`、実値に置き換える）:
+       `arn:aws:iam::123456789012:role/practice-stg-gha-preview-deploy-role`
+     - `PREVIEW_MAIL_REDIRECT_TO` 例（ダミー、実在の検証用受信箱に置き換える）: `preview-inbox@example.com`
+       （SES サンドボックス時はこの宛先も SES で検証済みである必要がある）
    - Environment `preview` を作成し、保護ルール（maintainer 承認など）を設定。
    - ラベル `preview` を作成。
 5. **アプリの env（stg/preview 共通の挙動）**: `AUTH_GOOGLE_ENABLED`（preview は false）、`MAIL_PREVIEW_REDIRECT_TO`、フロントは `VITE_AUTH_MODE=password`（preview ビルド時）。

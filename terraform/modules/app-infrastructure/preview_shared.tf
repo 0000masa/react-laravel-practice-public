@@ -94,10 +94,11 @@ resource "aws_route53_record" "preview_api_origin" {
 # ---------------------------------------------------------------------
 # WAF Web ACL（Basic 認証） — CLOUDFRONT scope（us-east-1）
 # 各 PR の CloudFront に関連付ける。Authorization が一致しなければ 401 を返す。
-# 資格情報(base64)は手動作成の SSM パラメータから読む（コードに直書きしない）。
+# 資格情報は手動作成の SSM パラメータから生の "user:pass" 形式で読む（コードに直書きしない）。
+# base64 化は WAF 側で base64encode() する（SSM には人間が入力する生の値を置く）。
 # ---------------------------------------------------------------------
-data "aws_ssm_parameter" "preview_basic_auth_b64" {
-  name            = "${var.parameter_store_path}preview_basic_auth_b64"
+data "aws_ssm_parameter" "preview_basic_auth" {
+  name            = "${var.parameter_store_path}preview_basic_auth"
   with_decryption = true
 }
 
@@ -136,7 +137,7 @@ resource "aws_wafv2_web_acl" "preview_basic_auth" {
               single_header { name = "authorization" }
             }
             positional_constraint = "EXACTLY"
-            search_string         = "Basic ${data.aws_ssm_parameter.preview_basic_auth_b64.value}"
+            search_string         = "Basic ${base64encode(data.aws_ssm_parameter.preview_basic_auth.value)}"
             text_transformation {
               priority = 0
               type     = "NONE"
