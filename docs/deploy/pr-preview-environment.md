@@ -52,7 +52,7 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 
 ## IaC / state
 
-- 専用ルートモジュール `terraform/pr-env/`。**backend のキーを PR ごとに差し替え**て state を分離（`key = "preview/pr-<n>/terraform.tfstate"`）。workspace は使わない（CI での選択ミス事故を避ける）。
+- 専用ルートモジュール `terraform/pr-env/`。**backend のキーを PR ごとに差し替え**て state を分離（`key = "practice/laravel/preview/pr-<n>/terraform.tfstate"`、stg と同じ `practice/laravel/` 名前空間配下に揃える）。workspace は使わない（CI での選択ミス事故を避ける）。
 - ECS は本番のような Blue/Green は使わず、**Terraform が `image_tag` を変数で受けて単純なローリングのサービス/タスク定義として管理**（ecspresso 不使用）。
 - **DB の database 作成/削除だけは Terraform 管理外**（MySQL の database を Terraform で管理しない）。runner タスク経由で実行する。
 

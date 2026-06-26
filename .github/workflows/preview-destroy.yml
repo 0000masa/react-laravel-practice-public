@@ -28,7 +28,7 @@ jobs:
         working-directory: ./terraform/pr-env
     env:
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      TF_STATE_KEY: preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate
+      TF_STATE_KEY: practice/laravel/preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate
 
     steps:
       - uses: actions/checkout@v4

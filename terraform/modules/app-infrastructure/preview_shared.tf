@@ -317,7 +317,7 @@ resource "aws_iam_policy" "preview_deploy" {
         Sid      = "TfstateObject"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-        Resource = "arn:aws:s3:::${var.tfstate_bucket}/preview/*"
+        Resource = "arn:aws:s3:::${var.tfstate_bucket}/practice/laravel/preview/*"
       },
       {
         Sid      = "TfstateList"
@@ -325,7 +325,7 @@ resource "aws_iam_policy" "preview_deploy" {
         Action   = ["s3:ListBucket"]
         Resource = "arn:aws:s3:::${var.tfstate_bucket}"
         Condition = {
-          StringLike = { "s3:prefix" = ["preview/*"] }
+          StringLike = { "s3:prefix" = ["practice/laravel/preview/*"] }
         }
       },
       # stg state（remote_state で読む）への読み取り

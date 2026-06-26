@@ -51,7 +51,7 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number }}              # PR 番号。環境を識別するキーになる。
       IMAGE_TAG: sha-${{ github.event.pull_request.head.sha }}        # PR 最新コミットの SHA を使ったイメージタグ。
                                                                       # コミットごとに一意になり、取り違えを防げる。
-      TF_STATE_KEY: preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate
+      TF_STATE_KEY: practice/laravel/preview/pr-${{ github.event.pull_request.number }}/terraform.tfstate
                                                                       # tfstate の保存パス。PR ごとに分けることで
                                                                       # 環境同士が干渉しないようにしている。
 
@@ -78,9 +78,9 @@ jobs:
         run: |
           set -euo pipefail   # エラーが出たら即停止・未定義変数をエラーに・パイプ途中の失敗も検知（安全策）
           # S3 の preview/ 配下を一覧し、"PRE pr-"（=PRごとのフォルダ）の数を数える。|| true は0件でも止めないため。
-          COUNT=$(aws s3 ls "s3://${STATE_BUCKET}/preview/" | grep -c "PRE pr-" || true)
+          COUNT=$(aws s3 ls "s3://${STATE_BUCKET}/practice/laravel/preview/" | grep -c "PRE pr-" || true)
           # 今回の PR の環境が「すでに存在するか」を確認（更新なら上限チェックの対象外にするため）。
-          EXISTS=$(aws s3 ls "s3://${STATE_BUCKET}/preview/pr-${PR_NUMBER}/" || true)
+          EXISTS=$(aws s3 ls "s3://${STATE_BUCKET}/practice/laravel/preview/pr-${PR_NUMBER}/" || true)
           # 新規（EXISTS が空）かつ 既存数が上限以上なら、エラーを出して終了する。
           if [ -z "$EXISTS" ] && [ "$COUNT" -ge "${MAX_PREVIEWS}" ]; then
             echo "::error::同時 preview 数が上限 (${MAX_PREVIEWS}) に達しています (現在 ${COUNT})。"

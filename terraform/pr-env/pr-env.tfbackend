@@ -1,5 +1,5 @@
 # partial backend 設定。key は workflow が PR ごとに -backend-config で渡す:
-#   -backend-config="key=preview/pr-<n>/terraform.tfstate"
+#   -backend-config="key=practice/laravel/preview/pr-<n>/terraform.tfstate"
 bucket       = "github-action-terraform-tf-state-bucket"
 region       = "ap-northeast-1"
 use_lockfile = true
