@@ -61,7 +61,7 @@ npm run lint     # ESLint
 | --- | --- |
 | 全体像・技術スタック・CI/CD 一覧 | [README.md](./README.md) |
 | AWS / GCP の文脈分け | [CONTEXT-MAP.md](./CONTEXT-MAP.md) |
-| 工夫点・改善点（Q&A サマリ） | [docs/interview-prep.md](./docs/interview-prep.md) |
+| 工夫点・改善点（Q&A サマリ） | [docs/notes/interview-prep.md](./docs/notes/interview-prep.md) |
 | AWS インフラ設計・コスト・ECS 設定 | `docs/aws-infra/`、用語の正は [terraform/CONTEXT.md](./terraform/CONTEXT.md) |
 | GCP (Cloud Run) 構成 | `docs/gcp/`、[overview.md](./docs/gcp/overview.md) |
 | デプロイ (ecspresso / CodeDeploy / PR プレビュー) | `docs/deploy/` |

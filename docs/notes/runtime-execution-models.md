@@ -1,5 +1,4 @@
-> ⚠️ **この文書は一時ドキュメントです。** Notion へコピーしたら、このリポジトリからは削除して構いません。
-> 姉妹編：[tmp-container-memory-vs-ssd.md](./tmp-container-memory-vs-ssd.md)（コンテナはメモリで動くのかSSDで動くのか / php-fpm と OPcache）。本書はその続きで、**実行モデルがランタイムごとにどう違うか**を比較します。
+> 姉妹編：[container-memory-vs-ssd.md](./container-memory-vs-ssd.md)（コンテナはメモリで動くのかSSDで動くのか / php-fpm と OPcache）。本書はその続きで、**実行モデルがランタイムごとにどう違うか**を比較します。
 >
 > 📌 **前提**：Lambda も Cloudflare Workers も**このプロジェクトでは使っていません**（AWS=ECS Fargate、GCP=Cloud Run）。純粋に「仕組みを理解する」ための教育目的の比較です。また、このプロジェクトの React は本番では**静的ファイルにビルドして配信**しており、本番に Node.js サーバーは存在しません。本書の Node.js は「Express / Next.js(SSR) のような**常駐 Node サーバー**を立てる一般的なケース」を php-fpm と対比するものです。
 
@@ -248,7 +247,7 @@ PHP が「shared-nothing（毎回まっさら）」なのは弱点に見えて�
 
 ## 関連コード / ドキュメント（自力で読む練習に）
 
-- 姉妹編 [tmp-container-memory-vs-ssd.md](./tmp-container-memory-vs-ssd.md)（php-fpm と OPcache、コンテナの実体）
+- 姉妹編 [container-memory-vs-ssd.md](./container-memory-vs-ssd.md)（php-fpm と OPcache、コンテナの実体）
 - `docs/aws-infra/`（なぜ常駐コンテナ＝ECS Fargate を選んだか）、`docs/adr/`（設計判断の記録）
 - このプロジェクトの非同期処理 `docs/app/sqs_queue_qrcode.md`（「キュー＋ワーカー」型。Lambda 的な「イベント駆動」と比べると面白い）
 

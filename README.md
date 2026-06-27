@@ -211,7 +211,7 @@ git push
 
 ### 設計意図・工夫点・改善点（まず読む）
 
-- [interview-prep.md](docs/interview-prep.md) — 本プロジェクトの工夫点・改善点を Q&A 形式でまとめたサマリ
+- [interview-prep.md](docs/notes/interview-prep.md) — 本プロジェクトの工夫点・改善点を Q&A 形式でまとめたサマリ
 
 ### コスト / 全体設計
 

@@ -302,15 +302,15 @@ PHPUnit のテストは置いていますが、**CI に組み込めていない�
 
 ## 関連ドキュメント
 
-- [README.md](../README.md) — 全体像
-- [github_actions_secrets.md](./deploy/github_actions_secrets.md) — OIDC sub/ref・ForAllValues の罠
-- [iam_passrole_for_ecs.md](./aws-infra/iam_passrole_for_ecs.md) — PassRole 二重ロック
-- [module-refactoring.md](./aws-infra/module-refactoring.md) — 単一モジュール化・moved ブロック
-- [ecs-config-variables.md](./aws-infra/ecs-config-variables.md) — capacity provider 変数化・bake time
-- [ecspresso-deployment-pipeline.md](./deploy/ecspresso-deployment-pipeline.md) — B/G デプロイと必要権限
-- [codedeploy_ecs_deployment.md](./deploy/codedeploy_ecs_deployment.md) — CodeDeploy 方式との比較
-- [db-task-workflow.md](./deploy/db-task-workflow.md) — 承認付き DB 運用タスク
-- [sqs_queue_qrcode.md](./app/sqs_queue_qrcode.md) / [batch_daily_report.md](./app/batch_daily_report.md) — 非同期/バッチ
-- [aws-cost-estimation-verified.md](./aws-infra/aws-cost-estimation-verified.md) — コスト試算
+- [README.md](../../README.md) — 全体像
+- [github_actions_secrets.md](../deploy/github_actions_secrets.md) — OIDC sub/ref・ForAllValues の罠
+- [iam_passrole_for_ecs.md](../aws-infra/iam_passrole_for_ecs.md) — PassRole 二重ロック
+- [module-refactoring.md](../aws-infra/module-refactoring.md) — 単一モジュール化・moved ブロック
+- [ecs-config-variables.md](../aws-infra/ecs-config-variables.md) — capacity provider 変数化・bake time
+- [ecspresso-deployment-pipeline.md](../deploy/ecspresso-deployment-pipeline.md) — B/G デプロイと必要権限
+- [codedeploy_ecs_deployment.md](../deploy/codedeploy_ecs_deployment.md) — CodeDeploy 方式との比較
+- [db-task-workflow.md](../deploy/db-task-workflow.md) — 承認付き DB 運用タスク
+- [sqs_queue_qrcode.md](../app/sqs_queue_qrcode.md) / [batch_daily_report.md](../app/batch_daily_report.md) — 非同期/バッチ
+- [aws-cost-estimation-verified.md](../aws-infra/aws-cost-estimation-verified.md) — コスト試算
 </content>
 </invoke>
