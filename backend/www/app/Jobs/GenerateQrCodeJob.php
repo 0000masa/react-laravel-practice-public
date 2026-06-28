@@ -30,8 +30,13 @@ class GenerateQrCodeJob implements ShouldQueue
         public string $data,
         public int $userId,
     ) {
-        // キュー名を指定 production-qrcode-generationとなるようにする
-        $this->onQueue(env('APP_ENV', 'local').'-qrcode-generation');
+        // キュー名はあえて指定しない（onQueue で上書きしない）。
+        // 指定しなければコネクション(sqs)のデフォルトキュー = SQS_QUEUE 環境変数に従う。
+        // これによりキュー名の決定はインフラ側に一本化され、環境ごとに正しく振り分けられる:
+        //   - stg     : SQS_QUEUE = staging-qrcode-generation
+        //   - preview : SQS_QUEUE = <project>-preview-pr<n>-qrcode-generation（PRごとに一意）
+        // 以前は APP_ENV から名前を組み立てていたため、APP_ENV=preview が全PR共通になる
+        // preview 環境でキュー名がPR番号入りの実キューと一致せず、ジョブが処理されなかった。
     }
 
     /**
