@@ -158,6 +158,26 @@ Base64 は誰でもデコードできる**単なるエンコード**で、暗号
    ```bash
    php -r '$pdo=new PDO("mysql:host=".getenv("DB_HOST"),getenv("DB_USERNAME"),getenv("DB_PASSWORD"));$pdo->exec("CREATE USER IF NOT EXISTS \"preview\"@\"%\" IDENTIFIED BY \"<HEX>\"");$pdo->exec("GRANT ALL PRIVILEGES ON `preview\_%`.* TO \"preview\"@\"%\"");echo "ok\n";'
    ```
+
+   **`<HEX>` は必ず実際のパスワード値に置き換える**（`<` `>` ごと削除して、囲いの `\"...\"` の中に hex を貼る）。`<HEX>` のまま実行すると、文字列 `<HEX>` がそのままパスワードとして設定されてしまう。入れる値は手順1で **SSM `preview_db_password` に入れたのと完全に同一**でなければならない（preview-create の per-PR runner はこの SSM 値で `preview` ユーザーとして接続するため。ズレると `1045 Access denied` になる）。SSM の実値はこれで確認できる:
+   ```bash
+   aws ssm get-parameter --name /practice/stg/preview_db_password --with-decryption --query Parameter.Value --output text
+   ```
+   **パスワードを間違えた／上書きしたい場合**は `CREATE USER` では直せない（`IF NOT EXISTS` は既存ユーザーのパスワードを更新しないため）。**`ALTER USER` で上書き**する。同じく `db-task.yml`（stg / shell）の `shell_command` に貼る:
+   ```bash
+   php -r '$pdo=new PDO("mysql:host=".getenv("DB_HOST"),getenv("DB_USERNAME"),getenv("DB_PASSWORD"));$pdo->exec("ALTER USER \"preview\"@\"%\" IDENTIFIED BY \"<HEX>\"");echo "altered\n";'
+   ```
+   `<HEX>` は同様に実値へ置換し、**SSM `preview_db_password` と完全一致**させる（`< >` は消す）。
+
+   > 💡 値がズレている／不明なときは「**1つのクリーンな値を生成 → SSM を上書き → 同じ値で `ALTER USER`**」で揃え直すのが確実。手順例:
+   > ```bash
+   > PW=$(openssl rand -hex 32)                                  # 1) クリーンな値を1個生成（末尾改行なし）
+   > aws ssm put-parameter --name /practice/stg/preview_db_password \
+   >   --type SecureString --overwrite --value "$PW"            # 2) SSM を上書き
+   > echo "$PW"                                                  # 3) この値を ALTER USER の <HEX> に使う
+   > ```
+   > SSM 値に**末尾改行を混入させない**こと（`--value "$(openssl rand -hex 32)"` のように渡せば改行は入らない。`wc -c` が 65 なら改行混入＝不一致の原因）。
+
    > ⚠️ SQL を `shell_command` に**生で**（`CREATE USER ...` だけ）貼ってはいけない。`shell` モードは入力を `bash -lc "..."` として実行するため、SQL は bash コマンド扱いになって失敗する。必ず上の `php -r` 形式で渡すこと。
    > （`db-task.yml` は `--overrides` を環境変数経由で渡すよう修正済みなので、`'` や `` ` `` を含むこのワンライナーでも runner 側のクォートは壊れない。）
 4. **GitHub 設定**:
