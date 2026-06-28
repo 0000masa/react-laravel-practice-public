@@ -40,3 +40,7 @@ output "image_bucket" { value = module.app.image_bucket }
 output "image_cdn_domain_name" { value = module.app.image_cdn_domain_name }
 output "spa_fallback_function_arn" { value = module.app.spa_fallback_function_arn }
 output "parameter_store_path" { value = module.app.parameter_store_path }
+
+# preview は stg の検証済み SES アイデンティティをそのまま使う（独自検証なし）
+output "ses_domain_identity_arn" { value = module.app.ses_domain_identity_arn }
+output "ses_domain_identity_name" { value = module.app.ses_domain_identity_name }

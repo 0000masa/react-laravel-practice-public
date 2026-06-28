@@ -45,6 +45,16 @@ resource "aws_iam_role_policy" "task" {
         Resource = "arn:aws:s3:::${local.s.image_bucket}/*"
       },
       {
+        # メール送信。From は stg の検証済み SES アイデンティティ（locals.tf の
+        # MAIL_FROM_ADDRESS）。Resource をその identity ARN に絞る。
+        # 注: 実効権限は Boundary(PreviewRuntimeMax) との積集合。Boundary 側にも
+        # ses:SendEmail/SendRawEmail が必要（stg/preview_shared.tf）。
+        Sid      = "SesSend"
+        Effect   = "Allow"
+        Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+        Resource = local.s.ses_domain_identity_arn
+      },
+      {
         Sid      = "S3ImagesList"
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]

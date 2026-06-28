@@ -62,6 +62,8 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 - CloudFront に **WAF(Basic 認証)** を関連付ける。WAF は `Authorization` ヘッダを検査し、不一致なら **401 + `WWW-Authenticate: Basic realm="preview"`** のカスタムレスポンスを返す（IP 非依存）。資格情報は SSM 管理の共有 1 組。
 - preview では **Google ログインを無効化**（`AUTH_GOOGLE_ENABLED=false` / フロントは `VITE_AUTH_MODE=password`）。Google の承認済みリダイレクト URI はワイルドカード不可で PR ごとの URI を登録できないため。検証は**シーダーで作るテストユーザー + パスワードログイン**で行う。
 - メールは `MAIL_MAILER=ses` のまま、`AppServiceProvider` で `Mail::alwaysTo(config('mail.preview_redirect_to'))` により **stg/preview の全送信先を固定アドレスに上書き**（誤送信防止）。
+  - **送信元(From)は stg の検証済み SES ドメイン**（`noreply@${sub_frontend_domain_name}.<domain>`）に向ける。preview の閲覧ドメイン（`preview.<domain>`）は SES 未検証なので From に使えない。これにより **preview のために Route53 へ SES 検証/DKIM レコードを足す必要はない**（stg のアイデンティティを再利用）。From ドメインは stg output `ses_domain_identity_name` 経由で pr-env に渡す。
+  - SES 送信権限は **2 階建て**: per-PR タスクロール（`pr-env/iam.tf` の `SesSend`、`Resource = stg SES identity ARN`）と、その天井の **Permissions Boundary（`stg/preview_shared.tf` の `PreviewRuntimeMax`）の両方**に `ses:SendEmail`/`ses:SendRawEmail` が要る（実効権限は両者の積集合）。
 
 ### Basic 認証の仕組みと、なぜ SSM に生の `user:pass` を入れるか
 

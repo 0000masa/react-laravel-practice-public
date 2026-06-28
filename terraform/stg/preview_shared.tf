@@ -419,7 +419,12 @@ resource "aws_iam_policy" "preview_boundary" {
           "s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket",
           "logs:CreateLogStream", "logs:PutLogEvents",
           "ssmmessages:CreateControlChannel", "ssmmessages:CreateDataChannel",
-          "ssmmessages:OpenControlChannel", "ssmmessages:OpenDataChannel"
+          "ssmmessages:OpenControlChannel", "ssmmessages:OpenDataChannel",
+          # メール送信（preview は stg の検証済み SES アイデンティティから送る）。
+          # 天井は広め（Resource=*）だが、被害半径は AppServiceProvider の
+          # Mail::alwaysTo による固定宛先上書きで限定される。per-PR ロール本体は
+          # identity ARN にスコープする（iam.tf の SesSend）。
+          "ses:SendEmail", "ses:SendRawEmail"
         ]
         # 上限なので広めだが、per-PR ロール自身のポリシーで更に絞る。
         Resource = "*"
