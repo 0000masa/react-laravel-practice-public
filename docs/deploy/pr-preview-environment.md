@@ -62,6 +62,8 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 - CloudFront に **WAF(Basic 認証)** を関連付ける。WAF は `Authorization` ヘッダを検査し、不一致なら **401 + `WWW-Authenticate: Basic realm="preview"`** のカスタムレスポンスを返す（IP 非依存）。資格情報は SSM 管理の共有 1 組。
 - preview では **Google ログインを無効化**（`AUTH_GOOGLE_ENABLED=false` / フロントは `VITE_AUTH_MODE=password`）。Google の承認済みリダイレクト URI はワイルドカード不可で PR ごとの URI を登録できないため。検証は**シーダーで作るテストユーザー + パスワードログイン**で行う。
 - メールは `MAIL_MAILER=ses` のまま、`AppServiceProvider` で `Mail::alwaysTo(config('mail.preview_redirect_to'))` により **stg/preview の全送信先を固定アドレスに上書き**（誤送信防止）。
+  - **送信元(From)は stg の検証済み SES ドメイン**（`noreply@${sub_frontend_domain_name}.<domain>`）に向ける。preview の閲覧ドメイン（`preview.<domain>`）は SES 未検証なので From に使えない。これにより **preview のために Route53 へ SES 検証/DKIM レコードを足す必要はない**（stg のアイデンティティを再利用）。From ドメインは stg output `ses_domain_identity_name` 経由で pr-env に渡す。
+  - SES 送信権限は **2 階建て**: per-PR タスクロール（`pr-env/iam.tf` の `SesSend`、`Resource = stg SES identity ARN`）と、その天井の **Permissions Boundary（`stg/preview_shared.tf` の `PreviewRuntimeMax`）の両方**に `ses:SendEmail`/`ses:SendRawEmail` が要る（実効権限は両者の積集合）。
 
 ### Basic 認証の仕組みと、なぜ SSM に生の `user:pass` を入れるか
 
@@ -158,6 +160,26 @@ Base64 は誰でもデコードできる**単なるエンコード**で、暗号
    ```bash
    php -r '$pdo=new PDO("mysql:host=".getenv("DB_HOST"),getenv("DB_USERNAME"),getenv("DB_PASSWORD"));$pdo->exec("CREATE USER IF NOT EXISTS \"preview\"@\"%\" IDENTIFIED BY \"<HEX>\"");$pdo->exec("GRANT ALL PRIVILEGES ON `preview\_%`.* TO \"preview\"@\"%\"");echo "ok\n";'
    ```
+
+   **`<HEX>` は必ず実際のパスワード値に置き換える**（`<` `>` ごと削除して、囲いの `\"...\"` の中に hex を貼る）。`<HEX>` のまま実行すると、文字列 `<HEX>` がそのままパスワードとして設定されてしまう。入れる値は手順1で **SSM `preview_db_password` に入れたのと完全に同一**でなければならない（preview-create の per-PR runner はこの SSM 値で `preview` ユーザーとして接続するため。ズレると `1045 Access denied` になる）。SSM の実値はこれで確認できる:
+   ```bash
+   aws ssm get-parameter --name /practice/stg/preview_db_password --with-decryption --query Parameter.Value --output text
+   ```
+   **パスワードを間違えた／上書きしたい場合**は `CREATE USER` では直せない（`IF NOT EXISTS` は既存ユーザーのパスワードを更新しないため）。**`ALTER USER` で上書き**する。同じく `db-task.yml`（stg / shell）の `shell_command` に貼る:
+   ```bash
+   php -r '$pdo=new PDO("mysql:host=".getenv("DB_HOST"),getenv("DB_USERNAME"),getenv("DB_PASSWORD"));$pdo->exec("ALTER USER \"preview\"@\"%\" IDENTIFIED BY \"<HEX>\"");echo "altered\n";'
+   ```
+   `<HEX>` は同様に実値へ置換し、**SSM `preview_db_password` と完全一致**させる（`< >` は消す）。
+
+   > 💡 値がズレている／不明なときは「**1つのクリーンな値を生成 → SSM を上書き → 同じ値で `ALTER USER`**」で揃え直すのが確実。手順例:
+   > ```bash
+   > PW=$(openssl rand -hex 32)                                  # 1) クリーンな値を1個生成（末尾改行なし）
+   > aws ssm put-parameter --name /practice/stg/preview_db_password \
+   >   --type SecureString --overwrite --value "$PW"            # 2) SSM を上書き
+   > echo "$PW"                                                  # 3) この値を ALTER USER の <HEX> に使う
+   > ```
+   > SSM 値に**末尾改行を混入させない**こと（`--value "$(openssl rand -hex 32)"` のように渡せば改行は入らない。`wc -c` が 65 なら改行混入＝不一致の原因）。
+
    > ⚠️ SQL を `shell_command` に**生で**（`CREATE USER ...` だけ）貼ってはいけない。`shell` モードは入力を `bash -lc "..."` として実行するため、SQL は bash コマンド扱いになって失敗する。必ず上の `php -r` 形式で渡すこと。
    > （`db-task.yml` は `--overrides` を環境変数経由で渡すよう修正済みなので、`'` や `` ` `` を含むこのワンライナーでも runner 側のクォートは壊れない。）
 4. **GitHub 設定**:

@@ -41,7 +41,9 @@ locals {
     { name = "SQS_QUEUE", value = local.queue_name },
     # メール（送信先は固定アドレスへ上書き）
     { name = "MAIL_MAILER", value = "ses" },
-    { name = "MAIL_FROM_ADDRESS", value = "noreply@${local.s.preview_zone_apex}" },
+    # From は SES 検証済みの stg ドメインに向ける（preview ドメインは未検証のため）。
+    # これにより Route53 へ SES 検証/DKIM レコードを足さずに送信できる。
+    { name = "MAIL_FROM_ADDRESS", value = "noreply@${local.s.ses_domain_identity_name}" },
     { name = "MAIL_FROM_NAME", value = "practice-preview" },
     { name = "MAIL_PREVIEW_REDIRECT_TO", value = var.mail_preview_redirect_to },
     # preview では Google ログイン無効

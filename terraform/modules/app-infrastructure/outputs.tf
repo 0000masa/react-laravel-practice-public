@@ -105,6 +105,20 @@ output "spa_fallback_function_arn" {
   value       = aws_cloudfront_function.spa_fallback.arn
 }
 
+# SES（メール送信）。preview は独自ドメインを SES 検証せず、stg の検証済み
+# アイデンティティをそのまま使う（Route53 への SES レコード追加なし）。
+# pr-env はこの2つを stg output 経由で受け取り、From アドレスと IAM の
+# Resource スコープに使う。
+output "ses_domain_identity_arn" {
+  description = "検証済み SES ドメインアイデンティティの ARN。preview タスクロールの ses:SendEmail を identity 単位にスコープするのに使う。"
+  value       = aws_ses_domain_identity.main.arn
+}
+
+output "ses_domain_identity_name" {
+  description = "検証済み SES ドメイン名（例: stg.www.<domain>）。preview の MAIL_FROM_ADDRESS をこのドメインに向ける。"
+  value       = aws_ses_domain_identity.main.domain
+}
+
 output "parameter_store_path" {
   value = var.parameter_store_path
 }

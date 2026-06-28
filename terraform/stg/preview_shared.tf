@@ -258,9 +258,19 @@ resource "aws_iam_policy" "preview_deploy" {
         Resource = ["arn:aws:s3:::${var.project_name}-preview-pr*", "arn:aws:s3:::${var.project_name}-preview-pr*/*"]
       },
       {
-        Sid      = "Logs"
+        # DescribeLogGroups は「ロググループ一覧」の列挙系 API。IAM 評価が特定名ではなく
+        # アカウント全体の log-group 名前空間（log-group::log-stream:）に対して行われるため、
+        # prefix 付き ARN ではマッチせず拒否される。列挙系は Resource="*" が必須。
+        Sid      = "LogsDescribe"
         Effect   = "Allow"
-        Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:TagResource", "logs:DescribeLogGroups"]
+        Action   = ["logs:DescribeLogGroups"]
+        Resource = "*"
+      },
+      {
+        # 変更系は preview-pr* のロググループに限定（末尾 * が :log-stream まで含めて吸収する）。
+        Sid      = "LogsManage"
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:TagResource", "logs:ListTagsForResource"]
         Resource = "arn:aws:logs:*:${module.app.aws_account_id}:log-group:/ecs/${var.project_name}-preview-pr*"
       },
       {
@@ -268,6 +278,31 @@ resource "aws_iam_policy" "preview_deploy" {
         Effect   = "Allow"
         Action   = ["acm:DescribeCertificate", "acm:ListCertificates", "wafv2:GetWebACL", "wafv2:AssociateWebACL", "wafv2:DisassociateWebACL", "wafv2:ListResourcesForWebACL"]
         Resource = "*"
+      },
+      # --- ECR: PR イメージ(nginx/laravel)のビルド&push 用 ---
+      # ecr:GetAuthorizationToken は resource-level 非対応なので Resource="*"。
+      # push 系は laravel / nginx の2リポジトリに限定する。
+      {
+        Sid      = "EcrAuth"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Sid    = "EcrPushPreview"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage",
+          "ecr:BatchGetImage"
+        ]
+        Resource = [
+          "arn:aws:ecr:ap-northeast-1:${module.app.aws_account_id}:repository/${var.ecr_repo_name_laravel}",
+          "arn:aws:ecr:ap-northeast-1:${module.app.aws_account_id}:repository/${var.ecr_repo_name_nginx}"
+        ]
       },
       # --- IAM: /preview/ 配下のみ。CreateRole は Boundary 付与を強制（権限昇格防止）---
       # preview デプロイロール（GitHub Actions が AssumeRole）に「IAM ロールを新規作成
@@ -384,7 +419,12 @@ resource "aws_iam_policy" "preview_boundary" {
           "s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket",
           "logs:CreateLogStream", "logs:PutLogEvents",
           "ssmmessages:CreateControlChannel", "ssmmessages:CreateDataChannel",
-          "ssmmessages:OpenControlChannel", "ssmmessages:OpenDataChannel"
+          "ssmmessages:OpenControlChannel", "ssmmessages:OpenDataChannel",
+          # メール送信（preview は stg の検証済み SES アイデンティティから送る）。
+          # 天井は広め（Resource=*）だが、被害半径は AppServiceProvider の
+          # Mail::alwaysTo による固定宛先上書きで限定される。per-PR ロール本体は
+          # identity ARN にスコープする（iam.tf の SesSend）。
+          "ses:SendEmail", "ses:SendRawEmail"
         ]
         # 上限なので広めだが、per-PR ロール自身のポリシーで更に絞る。
         Resource = "*"

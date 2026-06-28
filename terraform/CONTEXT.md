@@ -15,3 +15,11 @@ _Avoid_: master ユーザー、アプリユーザー
 **スロット（slot_a / slot_b）**:
 本番 web サービスの ECS ネイティブ Blue/Green 切替に使う 2 つのターゲットグループ。検証環境では Blue/Green を使わないため登場しない。
 _Avoid_: 検証環境のターゲットグループ（そちらは `preview-pr<n>-tg`）
+
+**preview の閲覧ドメイン（`preview_zone_apex`）**:
+ブラウザがアクセスする preview のホスト名の親。`preview.<domain>`（例 `preview.mylabinfra.com`）で、各 PR は `pr-<n>.preview.<domain>`。CloudFront/ACM/WAF の対象。**メールの送信元ドメインとは別物**。
+_Avoid_: メール送信元ドメイン、SES 検証ドメイン
+
+**メール送信元ドメイン（SES 検証ドメイン）**:
+SES で検証済みの唯一のドメイン `${sub_frontend_domain_name}.<domain>`（例 `stg.www.mylabinfra.com`）。preview は独自ドメインを SES 検証せず、From をこの検証済みドメイン（`noreply@stg.www.<domain>`）に向けて送る。preview の閲覧ドメイン（`preview.<domain>`）は SES 未検証なので From に使えない。
+_Avoid_: preview の閲覧ドメイン、`preview_zone_apex`
