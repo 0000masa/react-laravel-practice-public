@@ -124,8 +124,17 @@ resource "aws_lb_listener_rule" "ecs_production" {
     }
   }
 
+  # 本番ホスト（www CloudFront 経由 = all_viewer で転送される viewer Host）に限定する。
+  # これが無いと「X-CloudFront-Secret + /*」だけで成立し、同じシークレットを共有する
+  # preview（pr-<n>.preview...）のリクエストまで priority 100 でこのルールが拾ってしまい、
+  # preview 用ルール（priority 20000+n）まで評価が回らず stg 本体へ誤転送される。
+  condition {
+    host_header {
+      values = ["${var.sub_frontend_domain_name}.${var.domain_name}"]
+    }
+  }
+
   # パスパターン「/*」は全パスにマッチするため省略可能。
-  # X-CloudFront-Secret の条件だけでルールは成立する（最低1つの条件があればよい）。
   # 将来的にパスを限定する可能性を考慮して明示的に残している。
   condition {
     path_pattern {
