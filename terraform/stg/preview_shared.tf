@@ -270,7 +270,7 @@ resource "aws_iam_policy" "preview_deploy" {
         # 変更系は preview-pr* のロググループに限定（末尾 * が :log-stream まで含めて吸収する）。
         Sid      = "LogsManage"
         Effect   = "Allow"
-        Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:TagResource"]
+        Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:TagResource", "logs:ListTagsForResource"]
         Resource = "arn:aws:logs:*:${module.app.aws_account_id}:log-group:/ecs/${var.project_name}-preview-pr*"
       },
       {
