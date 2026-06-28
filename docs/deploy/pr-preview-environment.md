@@ -63,6 +63,51 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 - preview では **Google ログインを無効化**（`AUTH_GOOGLE_ENABLED=false` / フロントは `VITE_AUTH_MODE=password`）。Google の承認済みリダイレクト URI はワイルドカード不可で PR ごとの URI を登録できないため。検証は**シーダーで作るテストユーザー + パスワードログイン**で行う。
 - メールは `MAIL_MAILER=ses` のまま、`AppServiceProvider` で `Mail::alwaysTo(config('mail.preview_redirect_to'))` により **stg/preview の全送信先を固定アドレスに上書き**（誤送信防止）。
 
+### Basic 認証の仕組みと、なぜ SSM に生の `user:pass` を入れるか
+
+WAF で実現している Basic 認証（HTTP Basic Authentication, RFC 7617）の流れを押さえると、SSM パラメータ `preview_basic_auth` の形式が決まる理由が分かる。
+
+**① ブラウザ側の Basic 認証フロー**
+
+1. WAF が `401 Unauthorized` ＋ `WWW-Authenticate: Basic realm="preview"` を返す。
+   - **`401` だけでも、ヘッダだけでもダメ**。この2つが揃って初めてブラウザは認証ダイアログを出す。
+   - ヘッダ先頭の `Basic` が**認証方式**の指定。これを見てブラウザは「Basic 認証だ」と判断する（他に `Digest` / `Bearer` 等がある）。
+2. ブラウザがログインダイアログを表示。ユーザーがユーザー名・パスワードを入力。
+3. ブラウザが `ユーザー名:パスワード` を**コロン1個でつなぎ**、その文字列を **Base64 エンコード**する。
+4. `Authorization: Basic <base64文字列>` を付けて再リクエスト。
+5. 同じ realm/パスへの以降のリクエストでは、ブラウザがこのヘッダを**自動で付け直す**（毎回ダイアログは出ない）。
+
+**② `realm` とは**
+
+`realm`（レルム）は**「保護領域の名前」**で、役割は2つ：
+
+- **表示ラベル**：ダイアログに「このサイト(preview)が認証を求めています」のように出る人間向けの目印。
+- **資格情報のスコープ**：ブラウザは資格情報を「オリジン + realm」をキーにキャッシュする。同じ realm の 401 なら自動再送、別 realm なら別資格情報として扱える。
+
+値（`"preview"`）は**任意の文字列で、認証の正否には一切関係しない**。照合はあくまで WAF 側の一致比較で行う。realm は「ラベル＋キャッシュの仕切り」にすぎない。
+
+なお `realm="preview"` は **キー名と値で自由度が違う**：
+
+- **キー名 `realm` は固定**（仕様で予約されたパラメータ名）。`area` 等に変えるとブラウザは realm として認識しない。
+- **値 `"preview"` だけが自由**（`"staging"` でも何でもよい）。
+
+また、ブラウザが「Basic 認証だ」と認識するトリガーは **`401` ＋ `WWW-Authenticate: Basic`（方式名）** の部分で、`realm` は省いても認証自体は成立する補足パラメータ（付けるとダイアログにラベルを出せる・資格情報をスコープできる）。
+
+**③ なぜ SSM には生の `user:pass` を入れるのか**
+
+WAF のルール（`terraform/stg/preview_shared.tf`）はこうなっている：
+
+```hcl
+search_string = "Basic ${base64encode(data.aws_ssm_parameter.preview_basic_auth.value)}"
+```
+
+WAF は **SSM の値をそのまま `base64encode()` し、ブラウザが送ってくる `Authorization: Basic <b64>` と完全一致比較**する。ブラウザは上の手順3で `preview:<pass>` を base64 化して送るので、WAF 側も**同じ `preview:<pass>` を base64 化**しないと一致しない。したがって SSM には「ブラウザが base64 化する**前**の生文字列」＝ `user:pass` を入れる必要がある。
+（SSM に base64 後の値を入れると WAF 側で二重 base64 になって一致しない。手動 base64 時の末尾改行混入事故も避けられる。）→ 値の作り方は [初回セットアップ](#初回セットアップ手動-1-回だけ)を参照。
+
+**④ Base64 は暗号化ではない → HTTPS 必須**
+
+Base64 は誰でもデコードできる**単なるエンコード**で、暗号化ではない。`Authorization: Basic <b64>` は実質平文と同じなので、盗聴されれば資格情報が漏れる。Basic 認証は **HTTPS 前提**で使う。preview は公開面が CloudFront（HTTPS）なので満たしている。
+
 ### preview デプロイ用 IAM ロール（重要）
 
 - STG の AdministratorAccess ロールは**流用しない**。preview は `pull_request` で**自動発火**し PR ブランチのコードで Terraform を回すため、admin だと PR コードによる権限昇格(pwn-request)が成立してしまう。
