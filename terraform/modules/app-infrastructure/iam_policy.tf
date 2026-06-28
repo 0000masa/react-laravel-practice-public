@@ -85,9 +85,9 @@ resource "aws_iam_policy" "ecs_execution_ssm_policy" {
           data.aws_ssm_parameter.app_key.arn,
           data.aws_ssm_parameter.google_client_id.arn,
           data.aws_ssm_parameter.google_client_secret.arn,
-          aws_ssm_parameter.otel_collector_config.arn,
-          # preview タスクは共有実行ロールを使うため、preview 用 DB パスワードも読めるようにする
-          data.aws_ssm_parameter.preview_db_password.arn
+          aws_ssm_parameter.otel_collector_config.arn
+          # preview 用 DB パスワードの読み取りは stg ルート側で後付けする（ADR 0007）。
+          # モジュール本体は preview を一切参照しない。
         ]
       }
       # カスタムKMSキーでSecureStringを暗号化している場合は以下のkms:Decryptが必要

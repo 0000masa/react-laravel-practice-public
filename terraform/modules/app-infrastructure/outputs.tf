@@ -86,34 +86,10 @@ output "aws_account_id" {
   value = data.aws_caller_identity.current.account_id
 }
 
-# --- preview 共有リソース（preview_shared.tf）---
-
-output "preview_cf_certificate_arn" {
-  description = "CloudFront 用ワイルドカード証明書（us-east-1, *.preview.<domain>）"
-  value       = aws_acm_certificate_validation.preview_cf.certificate_arn
-}
-
-output "preview_waf_web_acl_arn" {
-  description = "Basic 認証 WAF Web ACL（CLOUDFRONT scope）。各 PR の CloudFront に関連付ける。"
-  value       = aws_wafv2_web_acl.preview_basic_auth.arn
-}
-
-output "preview_permissions_boundary_arn" {
-  value = aws_iam_policy.preview_boundary.arn
-}
-
-output "preview_deploy_role_arn" {
-  value = module.gha_preview_deploy_role.arn
-}
-
-output "preview_api_origin_host" {
-  description = "全 PR CloudFront の /api オリジンが指す共有ホスト（ALB）"
-  value       = local.preview_api_origin
-}
-
-output "preview_zone_apex" {
-  value = local.preview_zone_apex
-}
+# preview 共有リソース（ワイルドカード ACM / WAF / Boundary / デプロイロール /
+# api.preview レコード / preview_db_password）は stg ルート（terraform/stg/preview_shared.tf）
+# が持つ。モジュールは preview を一切知らない。詳細は ADR 0007。
+# pr-env はそれらを stg ルートの output から読む。
 
 # 画像は既存 stg のバケット / CDN を preview でも再利用する
 output "image_bucket" {
@@ -133,6 +109,7 @@ output "parameter_store_path" {
   value = var.parameter_store_path
 }
 
-output "preview_db_password_ssm_arn" {
-  value = data.aws_ssm_parameter.preview_db_password.arn
+output "ecs_task_execution_role_name" {
+  description = "ECS 実行ロール名。stg ルートが preview 用 SSM 読み取りを後付けするために使う（ADR 0007）。"
+  value       = module.ecs_task_execution_role.name
 }

@@ -26,15 +26,17 @@ output "ecs_task_execution_role_arn" { value = module.app.ecs_task_execution_rol
 output "aws_region" { value = module.app.aws_region }
 output "aws_account_id" { value = module.app.aws_account_id }
 
-# --- preview 共有リソース ---
-output "preview_cf_certificate_arn" { value = module.app.preview_cf_certificate_arn }
-output "preview_waf_web_acl_arn" { value = module.app.preview_waf_web_acl_arn }
-output "preview_permissions_boundary_arn" { value = module.app.preview_permissions_boundary_arn }
-output "preview_deploy_role_arn" { value = module.app.preview_deploy_role_arn }
-output "preview_api_origin_host" { value = module.app.preview_api_origin_host }
-output "preview_zone_apex" { value = module.app.preview_zone_apex }
+# --- preview 共有リソース（stg ルートの preview_shared.tf が実体。ADR 0007）---
+output "preview_cf_certificate_arn" { value = aws_acm_certificate_validation.preview_cf.certificate_arn }
+output "preview_waf_web_acl_arn" { value = aws_wafv2_web_acl.preview_basic_auth.arn }
+output "preview_permissions_boundary_arn" { value = aws_iam_policy.preview_boundary.arn }
+output "preview_deploy_role_arn" { value = module.gha_preview_deploy_role.arn }
+output "preview_api_origin_host" { value = local.preview_api_origin }
+output "preview_zone_apex" { value = local.preview_zone_apex }
+output "preview_db_password_ssm_arn" { value = data.aws_ssm_parameter.preview_db_password.arn }
+
+# --- preview が再利用する stg 本体リソース（実体はモジュール）---
 output "image_bucket" { value = module.app.image_bucket }
 output "image_cdn_domain_name" { value = module.app.image_cdn_domain_name }
 output "spa_fallback_function_arn" { value = module.app.spa_fallback_function_arn }
 output "parameter_store_path" { value = module.app.parameter_store_path }
-output "preview_db_password_ssm_arn" { value = module.app.preview_db_password_ssm_arn }

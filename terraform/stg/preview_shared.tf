@@ -3,7 +3,14 @@
 # =====================================================================
 # 1 回だけ作成し、全 PR の preview が共有する。PR ごとのリソースは
 # terraform/pr-env/ が作る（このファイルでは作らない）。
-# 詳細: docs/pr-preview-environment.md
+#
+# このファイルは stg ルート専用に置く（共有モジュールには置かない）。
+# preview は stg にしか相乗りせず prod には不要なため、モジュールに入れると
+# prod ルートまで preview リソースを生やしてしまう。詳細は ADR 0007:
+#   docs/adr/0007-preview-shared-in-stg-root.md
+# モジュールが公開する ALB / ECS / 実行ロール / Route53 の値は module.app.* の
+# output から参照する（pr-env 向けに既に公開済み）。
+# 運用詳細: docs/deploy/pr-preview-environment.md
 
 locals {
   preview_zone_apex   = "preview.${var.domain_name}"     # 例: preview.mylabinfra.com
@@ -50,7 +57,7 @@ resource "aws_route53_record" "preview_cert_validation" {
     }
   }
   allow_overwrite = true
-  zone_id         = data.aws_route53_zone.main.zone_id
+  zone_id         = module.app.route53_zone_id
   name            = each.value.name
   records         = [each.value.record]
   type            = each.value.type
@@ -70,7 +77,7 @@ resource "aws_acm_certificate_validation" "preview_alb" {
 
 # ALB の HTTPS リスナーに preview ワイルドカード証明書を追加（SNI: api.preview...）
 resource "aws_lb_listener_certificate" "preview" {
-  listener_arn    = aws_lb_listener.https.arn
+  listener_arn    = module.app.alb_https_listener_arn
   certificate_arn = aws_acm_certificate_validation.preview_alb.certificate_arn
 }
 
@@ -78,12 +85,12 @@ resource "aws_lb_listener_certificate" "preview" {
 # 共有 API オリジン: api.preview.<domain> → ALB（全 PR の CloudFront が /api でここを指す）
 # ---------------------------------------------------------------------
 resource "aws_route53_record" "preview_api_origin" {
-  zone_id = data.aws_route53_zone.main.zone_id
+  zone_id = module.app.route53_zone_id
   name    = local.preview_api_origin
   type    = "A"
   alias {
-    name                   = aws_lb.main.dns_name
-    zone_id                = aws_lb.main.zone_id
+    name                   = module.app.alb_dns_name
+    zone_id                = module.app.alb_zone_id
     evaluate_target_health = true
   }
 }
@@ -103,7 +110,8 @@ data "aws_ssm_parameter" "preview_basic_auth" {
 }
 
 # preview の DB ユーザー(preview)のパスワード。手動作成の SSM パラメータ。
-# 共有実行ロールがこの ARN を読めるよう ecs_execution_ssm_policy に追加済み。
+# 共有実行ロールがこの ARN を読めるよう、stg ルートで後付けポリシーを足す
+# （aws_iam_role_policy.preview_execution_ssm。モジュール本体は preview を知らない）。
 data "aws_ssm_parameter" "preview_db_password" {
   name            = "${var.parameter_store_path}preview_db_password"
   with_decryption = true
@@ -220,20 +228,20 @@ resource "aws_iam_policy" "preview_deploy" {
         Resource = "*"
         Condition = {
           # クラスタ単位に縛れる API はこの条件が効く（縛れない API は無視される）。
-          ArnEqualsIfExists = { "ecs:cluster" = aws_ecs_cluster.main.arn }
+          ArnEqualsIfExists = { "ecs:cluster" = module.app.ecs_cluster_arn }
         }
       },
       {
         Sid      = "Sqs"
         Effect   = "Allow"
         Action   = ["sqs:*"]
-        Resource = "arn:aws:sqs:ap-northeast-1:${data.aws_caller_identity.current.account_id}:${var.project_name}-preview-pr*"
+        Resource = "arn:aws:sqs:ap-northeast-1:${module.app.aws_account_id}:${var.project_name}-preview-pr*"
       },
       {
         Sid      = "Route53Change"
         Effect   = "Allow"
         Action   = ["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets", "route53:GetHostedZone"]
-        Resource = "arn:aws:route53:::hostedzone/${data.aws_route53_zone.main.zone_id}"
+        Resource = "arn:aws:route53:::hostedzone/${module.app.route53_zone_id}"
       },
       {
         Sid      = "Route53Get"
@@ -253,7 +261,7 @@ resource "aws_iam_policy" "preview_deploy" {
         Sid      = "Logs"
         Effect   = "Allow"
         Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:TagResource", "logs:DescribeLogGroups"]
-        Resource = "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${var.project_name}-preview-pr*"
+        Resource = "arn:aws:logs:*:${module.app.aws_account_id}:log-group:/ecs/${var.project_name}-preview-pr*"
       },
       {
         Sid      = "AcmWafRead"
@@ -266,7 +274,7 @@ resource "aws_iam_policy" "preview_deploy" {
         Sid      = "IamCreatePreviewRolesWithBoundary"
         Effect   = "Allow"
         Action   = ["iam:CreateRole", "iam:TagRole"]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/preview/*"
+        Resource = "arn:aws:iam::${module.app.aws_account_id}:role/preview/*"
         Condition = {
           StringEquals = { "iam:PermissionsBoundary" = aws_iam_policy.preview_boundary.arn }
         }
@@ -279,13 +287,13 @@ resource "aws_iam_policy" "preview_deploy" {
           "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
           "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListInstanceProfilesForRole"
         ]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/preview/*"
+        Resource = "arn:aws:iam::${module.app.aws_account_id}:role/preview/*"
       },
       {
         Sid      = "IamPassPreviewRoles"
         Effect   = "Allow"
         Action   = ["iam:PassRole"]
-        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/preview/*"
+        Resource = "arn:aws:iam::${module.app.aws_account_id}:role/preview/*"
         Condition = {
           StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" }
         }
@@ -295,7 +303,7 @@ resource "aws_iam_policy" "preview_deploy" {
         Sid      = "IamPassExecutionRole"
         Effect   = "Allow"
         Action   = ["iam:PassRole"]
-        Resource = module.ecs_task_execution_role.arn
+        Resource = module.app.ecs_task_execution_role_arn
         Condition = {
           StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" }
         }
@@ -328,7 +336,7 @@ resource "aws_iam_policy" "preview_deploy" {
         Sid      = "SsmRead"
         Effect   = "Allow"
         Action   = ["ssm:GetParameter", "ssm:GetParameters"]
-        Resource = "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter${var.parameter_store_path}*"
+        Resource = "arn:aws:ssm:*:${module.app.aws_account_id}:parameter${var.parameter_store_path}*"
       }
     ]
   })
@@ -357,6 +365,27 @@ resource "aws_iam_policy" "preview_boundary" {
         ]
         # 上限なので広めだが、per-PR ロール自身のポリシーで更に絞る。
         Resource = "*"
+      }
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------
+# 共有 ECS 実行ロールへの preview 用 SSM 読み取りの後付け（ADR 0007）
+# モジュール本体の実行ロールポリシーは preview を一切参照しない。preview の
+# DB パスワード読み取りだけを、stg ルートからインラインポリシーで足す。
+# prod ルートはこのファイルを持たないので、この権限は prod に存在しない。
+# ---------------------------------------------------------------------
+resource "aws_iam_role_policy" "preview_execution_ssm" {
+  name = "${var.project_name}-preview-execution-ssm"
+  role = module.app.ecs_task_execution_role_name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameters", "ssm:GetParameter"]
+        Resource = [data.aws_ssm_parameter.preview_db_password.arn]
       }
     ]
   })

@@ -18,6 +18,12 @@ variable "github_allowed_branches" {
   type        = list(string)
 }
 
+variable "preview_github_environment_name" {
+  description = "preview デプロイロールの AssumeRole を許可する GitHub Environment 名（OIDC sub: repo:OWNER/REPO:environment:NAME）。preview_shared.tf で使用。"
+  type        = string
+  default     = "preview"
+}
+
 variable "tfstate_bucket" {
   description = "Terraform state が格納されている S3 バケット名"
   type        = string
