@@ -269,6 +269,31 @@ resource "aws_iam_policy" "preview_deploy" {
         Action   = ["acm:DescribeCertificate", "acm:ListCertificates", "wafv2:GetWebACL", "wafv2:AssociateWebACL", "wafv2:DisassociateWebACL", "wafv2:ListResourcesForWebACL"]
         Resource = "*"
       },
+      # --- ECR: PR イメージ(nginx/laravel)のビルド&push 用 ---
+      # ecr:GetAuthorizationToken は resource-level 非対応なので Resource="*"。
+      # push 系は laravel / nginx の2リポジトリに限定する。
+      {
+        Sid      = "EcrAuth"
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Sid    = "EcrPushPreview"
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage",
+          "ecr:BatchGetImage"
+        ]
+        Resource = [
+          "arn:aws:ecr:ap-northeast-1:${module.app.aws_account_id}:repository/${var.ecr_repo_name_laravel}",
+          "arn:aws:ecr:ap-northeast-1:${module.app.aws_account_id}:repository/${var.ecr_repo_name_nginx}"
+        ]
+      },
       # --- IAM: /preview/ 配下のみ。CreateRole は Boundary 付与を強制（権限昇格防止）---
       # preview デプロイロール（GitHub Actions が AssumeRole）に「IAM ロールを新規作成
       # してよい」を与えるブロック。実際に作られる先は pr-env/iam.tf の
