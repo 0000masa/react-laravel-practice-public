@@ -174,32 +174,19 @@ resource "aws_wafv2_web_acl" "preview_basic_auth" {
   }
 }
 
-# ---------------------------------------------------------------------
-# Permissions Boundary（per-PR ロールが持てる権限の上限）
-# preview デプロイロールが作る per-PR ロールに必須付与する。
-# ---------------------------------------------------------------------
-resource "aws_iam_policy" "preview_boundary" {
-  name        = "${var.project_name}-preview-permissions-boundary"
-  description = "Max permissions for per-PR preview task roles"
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "PreviewRuntimeMax"
-        Effect = "Allow"
-        Action = [
-          "sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes", "sqs:GetQueueUrl",
-          "s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket",
-          "logs:CreateLogStream", "logs:PutLogEvents",
-          "ssmmessages:CreateControlChannel", "ssmmessages:CreateDataChannel",
-          "ssmmessages:OpenControlChannel", "ssmmessages:OpenDataChannel"
-        ]
-        # 上限なので広めだが、per-PR ロール自身のポリシーで更に絞る。
-        Resource = "*"
-      }
-    ]
-  })
+# preview デプロイ用 OIDC ロール（GitHub Environment `preview` 経由でのみ AssumeRole 可）
+module "gha_preview_deploy_role" {
+  source = "terraform-aws-modules/iam/aws//modules/iam-role"
+
+  name            = "${var.project_name}-gha-preview-deploy-role"
+  use_name_prefix = false
+
+  enable_github_oidc = true
+  oidc_subjects      = [local.preview_oidc_sub]
+
+  policies = {
+    PreviewDeploy = aws_iam_policy.preview_deploy.arn
+  }
 }
 
 # ---------------------------------------------------------------------
@@ -347,17 +334,30 @@ resource "aws_iam_policy" "preview_deploy" {
   })
 }
 
-# preview デプロイ用 OIDC ロール（GitHub Environment `preview` 経由でのみ AssumeRole 可）
-module "gha_preview_deploy_role" {
-  source = "terraform-aws-modules/iam/aws//modules/iam-role"
-
-  name            = "${var.project_name}-gha-preview-deploy-role"
-  use_name_prefix = false
-
-  enable_github_oidc = true
-  oidc_subjects      = [local.preview_oidc_sub]
-
-  policies = {
-    PreviewDeploy = aws_iam_policy.preview_deploy.arn
-  }
+# ---------------------------------------------------------------------
+# Permissions Boundary（per-PR ロールが持てる権限の上限）
+# preview デプロイロールが作る per-PR ロールに必須付与する。
+# ---------------------------------------------------------------------
+resource "aws_iam_policy" "preview_boundary" {
+  name        = "${var.project_name}-preview-permissions-boundary"
+  description = "Max permissions for per-PR preview task roles"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "PreviewRuntimeMax"
+        Effect = "Allow"
+        Action = [
+          "sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes", "sqs:GetQueueUrl",
+          "s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket",
+          "logs:CreateLogStream", "logs:PutLogEvents",
+          "ssmmessages:CreateControlChannel", "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel", "ssmmessages:OpenDataChannel"
+        ]
+        # 上限なので広めだが、per-PR ロール自身のポリシーで更に絞る。
+        Resource = "*"
+      }
+    ]
+  })
 }
