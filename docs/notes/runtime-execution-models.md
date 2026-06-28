@@ -183,6 +183,8 @@ PHP が「shared-nothing（毎回まっさら）」なのは弱点に見えて�
 
 つまり各 📥 行で「メモリに展開」と書いたのは、正確には **「解凍してディスクに展開したコードを、実行時にメモリへ読み込む」**。**「ディスクに展開」と「メモリに読み込む」は別の段階**です。
 
+> 🔎 レイヤー・overlayfs・「なぜレイヤーに分けるのか」「push で差分だけ送られる仕組み」の深掘りは姉妹編 [docker-layers-and-overlayfs.md](./docker-layers-and-overlayfs.md) へ。
+
 ### Fargate の場合（本プロジェクトの本番）
 
 - 上記の「ホストのディスク」＝ **Fargate 管理の、タスクごとに隔離されたエフェメラル（一時）ストレージ**（PV1.4+ で 20GiB、AES-256 暗号化。出典：[ECS Fargate security best practices](https://docs.aws.amazon.com/AmazonECS/latest/bestpracticesguide/security-fargate.html)）。**タスクが消えれば一緒に消える**
