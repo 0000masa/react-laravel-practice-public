@@ -147,10 +147,19 @@ Base64 は誰でもデコードできる**単なるエンコード**で、暗号
    - `preview_basic_auth` — Basic 認証資格情報を**生の `user:pass` 形式**で入れる（例: `preview:<ランダム生成したパスワード>`）。base64 化は WAF 側で `base64encode()` するので、ここに base64 後の値は入れない（手動 base64 時の末尾改行混入事故も防げる）。
 2. **共有リソースを apply**: `terraform/stg` を apply すると preview 共有リソース（ワイルドカード ACM・WAF・`api.preview`→ALB・Permissions Boundary・preview デプロイロール）と output が作られる。frontend バケットは PR ごとに pr-env が作るのでここには含まれない。
 3. **preview MySQL ユーザーを作成**（`db-task.yml` の `shell` モードで 1 回）:
+
+   実行したい SQL はこれ（`<HEX>` は手順1で SSM `preview_db_password` に入れた実際の hex 値）:
    ```sql
-   CREATE USER 'preview'@'%' IDENTIFIED BY '<preview_db_password>';
+   CREATE USER IF NOT EXISTS 'preview'@'%' IDENTIFIED BY '<HEX>';
    GRANT ALL PRIVILEGES ON `preview\_%`.* TO 'preview'@'%';
    ```
+
+   ただし runner イメージ（`docker/ecr/backend/Dockerfile`）には **`mysql` クライアントが入っていない**（PHP の `pdo_mysql` のみ）。なので SQL は **`php -r` の PDO 経由**で流す。`db-task.yml` の `shell_command` 入力に次の1行を貼る（接続情報は runner タスクの env `DB_HOST` / `DB_USERNAME` / `DB_PASSWORD` = master/app 資格情報を使う）:
+   ```bash
+   php -r '$pdo=new PDO("mysql:host=".getenv("DB_HOST"),getenv("DB_USERNAME"),getenv("DB_PASSWORD"));$pdo->exec("CREATE USER IF NOT EXISTS \"preview\"@\"%\" IDENTIFIED BY \"<HEX>\"");$pdo->exec("GRANT ALL PRIVILEGES ON `preview\_%`.* TO \"preview\"@\"%\"");echo "ok\n";'
+   ```
+   > ⚠️ SQL を `shell_command` に**生で**（`CREATE USER ...` だけ）貼ってはいけない。`shell` モードは入力を `bash -lc "..."` として実行するため、SQL は bash コマンド扱いになって失敗する。必ず上の `php -r` 形式で渡すこと。
+   > （`db-task.yml` は `--overrides` を環境変数経由で渡すよう修正済みなので、`'` や `` ` `` を含むこのワンライナーでも runner 側のクォートは壊れない。）
 4. **GitHub 設定**:
    - Secret: `AWS_PREVIEW_DEPLOY_ROLE_ARN`（output `preview_deploy_role_arn`）、`PREVIEW_MAIL_REDIRECT_TO`。
      - `AWS_PREVIEW_DEPLOY_ROLE_ARN` 例（アカウントID はダミー `123456789012`、実値に置き換える）:

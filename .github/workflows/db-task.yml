@@ -105,6 +105,11 @@ jobs:
 
       - name: Run ECS Task
         id: run
+        # OVERRIDES は環境変数経由で渡す。シェルに直書き（--overrides '...'）すると、
+        # shell_command に ' や ; や < などが含まれたとき runner のシェルのクォートが
+        # 壊れて落ちる。env で受けて "$OVERRIDES" と展開すれば中身は再パースされず安全。
+        env:
+          OVERRIDES: ${{ steps.overrides.outputs.OVERRIDES }}
         run: |
           set -euo pipefail
           echo "Starting ${{ inputs.command_type }} on ${{ inputs.target_env }}..."
@@ -114,7 +119,7 @@ jobs:
             --task-definition "${{ env.ECS_TASK_DEF }}" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[${{ env.SUBNET_ID_A }}],securityGroups=[${{ env.SECURITY_GROUP_ID }}],assignPublicIp=DISABLED}" \
-            --overrides '${{ steps.overrides.outputs.OVERRIDES }}' \
+            --overrides "$OVERRIDES" \
             --query "tasks[0].taskArn" --output text)
 
           echo "Task ARN: $TASK_ARN"
