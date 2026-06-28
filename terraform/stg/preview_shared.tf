@@ -258,9 +258,19 @@ resource "aws_iam_policy" "preview_deploy" {
         Resource = ["arn:aws:s3:::${var.project_name}-preview-pr*", "arn:aws:s3:::${var.project_name}-preview-pr*/*"]
       },
       {
-        Sid      = "Logs"
+        # DescribeLogGroups は「ロググループ一覧」の列挙系 API。IAM 評価が特定名ではなく
+        # アカウント全体の log-group 名前空間（log-group::log-stream:）に対して行われるため、
+        # prefix 付き ARN ではマッチせず拒否される。列挙系は Resource="*" が必須。
+        Sid      = "LogsDescribe"
         Effect   = "Allow"
-        Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:TagResource", "logs:DescribeLogGroups"]
+        Action   = ["logs:DescribeLogGroups"]
+        Resource = "*"
+      },
+      {
+        # 変更系は preview-pr* のロググループに限定（末尾 * が :log-stream まで含めて吸収する）。
+        Sid      = "LogsManage"
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy", "logs:TagResource"]
         Resource = "arn:aws:logs:*:${module.app.aws_account_id}:log-group:/ecs/${var.project_name}-preview-pr*"
       },
       {
