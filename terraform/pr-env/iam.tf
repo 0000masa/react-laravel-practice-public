@@ -2,6 +2,15 @@
 # per-PR タスクロール（/preview/ パス + Permissions Boundary 必須）
 # 実行ロール(ECR pull / SSM)は stg の共有ロールを再利用する。
 # ---------------------------------------------------------------------
+# このロールは GitHub Actions の preview デプロイロールが iam:CreateRole で作る。
+# そのデプロイ権限（stg/preview_shared.tf の IamCreatePreviewRolesWithBoundary）は
+# 2 ゲートを課しており、以下の 2 行がそれを満たすために必須:
+#   - path = "/preview/"            → ロール ARN を role/preview/* にして
+#                                      Resource ゲート（role/preview/* のみ作成可）を通過。
+#   - permissions_boundary = ...      → Condition ゲート（Boundary 付与の強制）を通過。
+# どちらを欠いても CreateRole は AccessDenied になる（ADR 0006）。
+# Boundary は天井（最大権限）。このロールの実効権限は、下の自前ポリシー
+# （aws_iam_role_policy.task）と Boundary の積集合になる。
 resource "aws_iam_role" "task" {
   name                 = "${local.name}-task-role"
   path                 = "/preview/"

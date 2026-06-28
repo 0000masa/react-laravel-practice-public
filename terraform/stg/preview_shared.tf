@@ -270,6 +270,18 @@ resource "aws_iam_policy" "preview_deploy" {
         Resource = "*"
       },
       # --- IAM: /preview/ 配下のみ。CreateRole は Boundary 付与を強制（権限昇格防止）---
+      # preview デプロイロール（GitHub Actions が AssumeRole）に「IAM ロールを新規作成
+      # してよい」を与えるブロック。実際に作られる先は pr-env/iam.tf の
+      # aws_iam_role.task（per-PR タスクロール）。ただし 2 つのゲートを掛ける:
+      #   1) Resource ゲート: ARN が role/preview/* に一致するロールしか作れない。
+      #      → pr-env/iam.tf の path = "/preview/" がこれを満たす。path を省略すると
+      #        ARN は role/<name> になり AccessDenied。
+      #   2) Condition ゲート: CreateRole 時に iam:PermissionsBoundary が
+      #      preview_boundary の ARN と完全一致しないと拒否。
+      #      → pr-env/iam.tf の permissions_boundary = ...preview_permissions_boundary_arn
+      #        がこれを満たす。付け忘れると AccessDenied。
+      # この 2 ゲートにより「Boundary 付き・/preview/ 配下のロール」しか作れず、
+      # PR コードが admin ロールをブートストラップする経路を塞ぐ（ADR 0006）。
       {
         Sid      = "IamCreatePreviewRolesWithBoundary"
         Effect   = "Allow"
@@ -343,8 +355,19 @@ resource "aws_iam_policy" "preview_deploy" {
 }
 
 # ---------------------------------------------------------------------
-# Permissions Boundary（per-PR ロールが持てる権限の上限）
-# preview デプロイロールが作る per-PR ロールに必須付与する。
+# Permissions Boundary（per-PR ロールが持てる権限の「上限＝天井」）
+# ---------------------------------------------------------------------
+# 重要: これは「権限の付与」ではない。Permissions Boundary は、これが付いた
+# ロールが持ちうる権限の最大集合（天井）を定義するだけ。
+# per-PR タスクロールの実効権限 = （pr-env/iam.tf の自前ポリシー）∩（この天井）
+# の積集合になる。
+#   - Resource = "*" と広いが、実際の絞り込みは pr-env/iam.tf 側の自前ポリシーが
+#     具体的 ARN で行う（例: SQS は当該 PR のキュー、S3 は image_bucket のみ）。
+#   - 逆に、per-PR ロールの自前ポリシーに何を書いても、ここに無い action
+#     （例: iam:* / s3:DeleteBucket など）は天井で弾かれて効かない。
+# CreateRole の Condition（上の IamCreatePreviewRolesWithBoundary）でこの Boundary
+# 付与が強制されるため、デプロイロールはこの天井を超えるロールを作れない。
+# = PR コードによる権限昇格(pwn-request)を構造的に防ぐ（ADR 0006）。
 # ---------------------------------------------------------------------
 resource "aws_iam_policy" "preview_boundary" {
   name        = "${var.project_name}-preview-permissions-boundary"
