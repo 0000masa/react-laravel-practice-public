@@ -18,7 +18,7 @@ resource "aws_cloudfront_distribution" "this" {
   comment             = local.name
   default_root_object = "index.html"
   aliases             = [local.subdomain]
-  web_acl_id          = local.s.preview_waf_web_acl_arn
+  web_acl_id          = local.s.cloudfront_waf_arn
 
   # フロント（PR ごとのバケット。ルートに配置するので origin_path 不要）
   origin {
@@ -69,6 +69,13 @@ resource "aws_cloudfront_distribution" "this" {
     compress                 = true
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
+
+    # Basic 認証は CloudFront Function（stg の spa_fallback を共有）。関数はビヘイビアごとなので
+    # default だけでなく /api/* にも付ける（付けないと API パスが認証を素通りする）。
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = local.s.spa_fallback_function_arn
+    }
   }
 
   restrictions {

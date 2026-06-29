@@ -99,10 +99,12 @@ resource "aws_route53_record" "preview_api_origin" {
 # destroy でバケットごと中身も消えるよう per-PR にした。共有バケットは持たない。
 
 # ---------------------------------------------------------------------
-# WAF Web ACL（Basic 認証） — CLOUDFRONT scope（us-east-1）
-# 各 PR の CloudFront に関連付ける。Authorization が一致しなければ 401 を返す。
-# 資格情報は手動作成の SSM パラメータから生の "user:pass" 形式で読む（コードに直書きしない）。
-# base64 化は WAF 側で base64encode() する（SSM には人間が入力する生の値を置く）。
+# Basic 認証の資格情報（手動作成の SSM パラメータ、生の "user:pass" 形式）。
+# Basic 認証は WAF ではなく CloudFront Function（module の spa_fallback）で行う。
+# この値を stg ルートが module.app の basic_auth_credential に渡し、enable_basic_auth=true
+# のとき関数コードへ "Basic <b64>" を焼き込む。preview の CloudFront も stg の同じ関数を
+# 共有するため、別途 preview 専用 WAF は持たない（WAF は全環境で cloudfront_waf 1枚に集約）。
+# base64 化は module 側で base64encode() する（SSM には人間が入力する生の値を置く）。
 # ---------------------------------------------------------------------
 data "aws_ssm_parameter" "preview_basic_auth" {
   name            = "${var.parameter_store_path}preview_basic_auth"
@@ -115,71 +117,6 @@ data "aws_ssm_parameter" "preview_basic_auth" {
 data "aws_ssm_parameter" "preview_db_password" {
   name            = "${var.parameter_store_path}preview_db_password"
   with_decryption = true
-}
-
-resource "aws_wafv2_web_acl" "preview_basic_auth" {
-  provider = aws.us_east_1
-  name     = "${var.project_name}-preview-basic-auth"
-  scope    = "CLOUDFRONT"
-
-  default_action {
-    allow {}
-  }
-
-  custom_response_body {
-    key          = "unauthorized"
-    content      = "Authentication required."
-    content_type = "TEXT_PLAIN"
-  }
-
-  rule {
-    name     = "require-basic-auth"
-    priority = 0
-
-    # Authorization ヘッダが「Basic <b64>」と完全一致しない場合に block(401)。
-    statement {
-      not_statement {
-        statement {
-          byte_match_statement {
-            field_to_match {
-              single_header { name = "authorization" }
-            }
-            positional_constraint = "EXACTLY"
-            search_string         = "Basic ${base64encode(data.aws_ssm_parameter.preview_basic_auth.value)}"
-            text_transformation {
-              priority = 0
-              type     = "NONE"
-            }
-          }
-        }
-      }
-    }
-
-    action {
-      block {
-        custom_response {
-          response_code            = 401
-          custom_response_body_key = "unauthorized"
-          response_header {
-            name  = "WWW-Authenticate"
-            value = "Basic realm=\"preview\""
-          }
-        }
-      }
-    }
-
-    visibility_config {
-      cloudwatch_metrics_enabled = true
-      metric_name                = "${var.project_name}-preview-basic-auth"
-      sampled_requests_enabled   = true
-    }
-  }
-
-  visibility_config {
-    cloudwatch_metrics_enabled = true
-    metric_name                = "${var.project_name}-preview-waf"
-    sampled_requests_enabled   = true
-  }
 }
 
 # preview デプロイ用 OIDC ロール（GitHub Environment `preview` 経由でのみ AssumeRole 可）

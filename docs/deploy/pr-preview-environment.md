@@ -6,7 +6,7 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 
 ```
 [ブラウザ]
-   │  https://pr-<n>.preview.example.com   (Basic 認証 = WAF)
+   │  https://pr-<n>.preview.example.com   (Basic 認証 = CloudFront Function)
    ▼
 [CloudFront：PR ごとに 1 枚]
    ├─ /            → S3 frontend(PRごとバケット)         ← SPA を配信（バケットのルート）
@@ -47,7 +47,8 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 | frontend S3 バケット | **PR ごと** | `preview-pr<n>-frontend`。当該 CloudFront のオリジン。`destroy` でバケットごと中身も削除（消し残りなし） |
 | `preview-api` Route53 → ALB | **共有** | 全 PR CloudFront の `/api` オリジン |
 | ワイルドカード ACM 証明書 | **共有(1 回作成)** | `*.preview.example.com`（CloudFront 用は us-east-1、ALB 用は ap-northeast-1） |
-| WAF Web ACL(Basic 認証) | **共有(1 回作成, us-east-1)** | 各 PR CloudFront に関連付け |
+| WAF Web ACL(マネージドルール) | **共有（module の `cloudfront_waf` を再利用, us-east-1）** | 攻撃遮断用。stg frontend と全 PR CloudFront が同じ1枚を使う。**Basic 認証はこの WAF ではない**（下行） |
+| Basic 認証 | **共有（stg の `spa_fallback` CloudFront Function を再利用）** | アクセス制限用。WAF ではなく CF Function（`enable_basic_auth=true`）。各 PR CloudFront の default と `/api/*` の両ビヘイビアに付与 |
 | エラー通知 Lambda | **作らない** | PR ごとにエラーメールが飛ぶとスパムになるため |
 
 ## IaC / state
@@ -59,7 +60,7 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 ## アクセス制御
 
 - 唯一の公開面は **PR ごとの CloudFront**。ALB は `X-CloudFront-Secret` 無しを 403 で弾くので、ALB/ECS への直接到達経路は無い。
-- CloudFront に **WAF(Basic 認証)** を関連付ける。WAF は `Authorization` ヘッダを検査し、不一致なら **401 + `WWW-Authenticate: Basic realm="preview"`** のカスタムレスポンスを返す（IP 非依存）。資格情報は SSM 管理の共有 1 組。
+- CloudFront に **Basic 認証（CloudFront Function 方式）** を掛ける。stg/preview 共有の `spa_fallback` 関数（viewer-request）が `Authorization` ヘッダを検査し、不一致なら **401 + `WWW-Authenticate: Basic realm="restricted"`** を返す（IP 非依存）。資格情報は SSM 管理の共有 1 組を apply 時に関数コードへ焼き込む。WAF（`cloudfront_waf`）は別レイヤで攻撃遮断（マネージドルール）を担い、全環境で1枚に集約。Basic 認証を WAF でなく CF Function にした経緯・コスト比較は ADR 0009。
 - preview では **Google ログインを無効化**（`AUTH_GOOGLE_ENABLED=false` / フロントは `VITE_AUTH_MODE=password`）。Google の承認済みリダイレクト URI はワイルドカード不可で PR ごとの URI を登録できないため。検証は**シーダーで作るテストユーザー + パスワードログイン**で行う。
 - メールは `MAIL_MAILER=ses` のまま、`AppServiceProvider` で `Mail::alwaysTo(config('mail.preview_redirect_to'))` により **stg/preview の全送信先を固定アドレスに上書き**（誤送信防止）。
   - **送信元(From)は stg の検証済み SES ドメイン**（`noreply@${sub_frontend_domain_name}.<domain>`）に向ける。preview の閲覧ドメイン（`preview.<domain>`）は SES 未検証なので From に使えない。これにより **preview のために Route53 へ SES 検証/DKIM レコードを足す必要はない**（stg のアイデンティティを再利用）。From ドメインは stg output `ses_domain_identity_name` 経由で pr-env に渡す。
@@ -67,11 +68,11 @@ PR を作るたびに、その PR のコードで動く**本番相当のフル�
 
 ### Basic 認証の仕組みと、なぜ SSM に生の `user:pass` を入れるか
 
-WAF で実現している Basic 認証（HTTP Basic Authentication, RFC 7617）の流れを押さえると、SSM パラメータ `preview_basic_auth` の形式が決まる理由が分かる。
+CloudFront Function で実現している Basic 認証（HTTP Basic Authentication, RFC 7617）の流れを押さえると、SSM パラメータ `preview_basic_auth` の形式が決まる理由が分かる。
 
 **① ブラウザ側の Basic 認証フロー**
 
-1. WAF が `401 Unauthorized` ＋ `WWW-Authenticate: Basic realm="preview"` を返す。
+1. CloudFront Function が `401 Unauthorized` ＋ `WWW-Authenticate: Basic realm="restricted"` を返す。
    - **`401` だけでも、ヘッダだけでもダメ**。この2つが揃って初めてブラウザは認証ダイアログを出す。
    - ヘッダ先頭の `Basic` が**認証方式**の指定。これを見てブラウザは「Basic 認証だ」と判断する（他に `Digest` / `Bearer` 等がある）。
 2. ブラウザがログインダイアログを表示。ユーザーがユーザー名・パスワードを入力。
@@ -97,14 +98,16 @@ WAF で実現している Basic 認証（HTTP Basic Authentication, RFC 7617）�
 
 **③ なぜ SSM には生の `user:pass` を入れるのか**
 
-WAF のルール（`terraform/stg/preview_shared.tf`）はこうなっている：
+CloudFront Function（module の `spa_fallback`、`terraform/modules/app-infrastructure/cloudfront.tf`）はこうなっている：
 
 ```hcl
-search_string = "Basic ${base64encode(data.aws_ssm_parameter.preview_basic_auth.value)}"
+# enable_basic_auth=true のとき関数コードに焼き込まれる判定
+if (!authHeader || authHeader.value !== "Basic ${base64encode(var.basic_auth_credential)}") { return 401 }
 ```
 
-WAF は **SSM の値をそのまま `base64encode()` し、ブラウザが送ってくる `Authorization: Basic <b64>` と完全一致比較**する。ブラウザは上の手順3で `preview:<pass>` を base64 化して送るので、WAF 側も**同じ `preview:<pass>` を base64 化**しないと一致しない。したがって SSM には「ブラウザが base64 化する**前**の生文字列」＝ `user:pass` を入れる必要がある。
-（SSM に base64 後の値を入れると WAF 側で二重 base64 になって一致しない。手動 base64 時の末尾改行混入事故も避けられる。）→ 値の作り方は [初回セットアップ](#初回セットアップ手動-1-回だけ)を参照。
+関数は **SSM の生の値（`var.basic_auth_credential`）を apply 時に `base64encode()` し、ブラウザが送ってくる `Authorization: Basic <b64>` と完全一致比較**する。ブラウザは上の手順3で `preview:<pass>` を base64 化して送るので、こちらも**同じ `preview:<pass>` を base64 化**しないと一致しない。したがって SSM には「ブラウザが base64 化する**前**の生文字列」＝ `user:pass` を入れる必要がある。
+（SSM に base64 後の値を入れると二重 base64 になって一致しない。手動 base64 時の末尾改行混入事故も避けられる。）→ 値の作り方は [初回セットアップ](#初回セットアップ手動-1-回だけ)を参照。
+（CF Functions は実行時に SSM を読めないため、判定文字列は apply 時に関数コードへ焼き込む。`enable_basic_auth=false`＝prod では認証ブロックごと生成されず公開のまま。）
 
 **④ Base64 は暗号化ではない → HTTPS 必須**
 

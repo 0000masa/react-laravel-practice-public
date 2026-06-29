@@ -20,18 +20,40 @@ resource "aws_cloudfront_origin_access_control" "s3_oac_frontend" {
   signing_protocol                  = "sigv4"
 }
 
+locals {
+  # Basic 認証スニペット。CF Functions は実行時に SSM を読めないため、apply 時に Terraform の
+  # base64encode で "Basic <b64>" を完成させて焼き込み、受信 Authorization ヘッダと完全一致で
+  # 判定する（WAF の search_string と同じ考え方）。
+  basic_auth_snippet = <<-JS
+    var authHeader = request.headers.authorization;
+    if (!authHeader || authHeader.value !== "Basic ${base64encode(var.basic_auth_credential)}") {
+      return {
+        statusCode: 401,
+        statusDescription: "Unauthorized",
+        headers: { "www-authenticate": { value: "Basic realm=\"restricted\"" } }
+      };
+    }
+  JS
+
+  # enable_basic_auth=true（stg/preview）のときだけ関数の先頭に差し込む。false（prod）は空＝認証なし。
+  basic_auth_check = var.enable_basic_auth ? local.basic_auth_snippet : ""
+}
+
 resource "aws_cloudfront_function" "spa_fallback" {
   name    = "${var.project_name}-spa-fallback"
   runtime = "cloudfront-js-2.0"
-  comment = "Rewrite SPA routes to /index.html (exclude /api and files with extension)"
+  comment = "Optional Basic auth (stg/preview) + rewrite SPA routes to /index.html"
   publish = true
 
+  # 認証判定 → SPA フォールバックの順。default と /api/* の両ビヘイビアに付与するため、
+  # /api/ や拡張子付きは早期 return（SPA 書き換えはしないが認証は通す）。
   code = <<EOF
   function handler(event) {
-    const request = event.request;
-    const uri = request.uri;
+    var request = event.request;
+${local.basic_auth_check}
+    var uri = request.uri;
 
-    // API と静的ファイル（拡張子あり）は触らない
+    // API と静的ファイル（拡張子あり）は書き換えない
     if (uri.startsWith('/api/') || uri.includes('.')) return request;
 
     // SPAルートは index.html に寄せる
@@ -132,6 +154,13 @@ resource "aws_cloudfront_distribution" "frontend_cdn" {
 
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
+
+    # Basic 認証は CloudFront Function で行う。WAF と違い関数はビヘイビアごとなので、
+    # /api/* にも付けないと API パスが認証を素通りする。
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_fallback.arn
+    }
   }
 
 

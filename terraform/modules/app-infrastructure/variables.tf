@@ -208,3 +208,24 @@ variable "ecs_batch_daily_report_task_config" {
     }))
   })
 }
+
+variable "enable_basic_auth" {
+  description = <<-EOT
+    frontend CloudFront に Basic 認証（CloudFront Function 方式）を掛けるか。
+    stg / preview は true（非公開化）、prod は false（公開）。
+    true のとき spa_fallback 関数の先頭に Basic 認証判定が差し込まれる。
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "basic_auth_credential" {
+  description = <<-EOT
+    Basic 認証の生の資格情報 "user:pass"（enable_basic_auth=true のときのみ使用）。
+    base64 化は module 内で行い、"Basic <b64>" を関数コードに焼き込む。
+    CF Functions は実行時に SSM を読めないため apply 時の埋め込みが必要。
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
+}

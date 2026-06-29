@@ -101,8 +101,13 @@ output "image_cdn_domain_name" {
 }
 
 output "spa_fallback_function_arn" {
-  description = "SPA フォールバック CloudFront Function。preview の各 CloudFront でも再利用する。"
+  description = "SPA フォールバック（＋ Basic 認証）CloudFront Function。preview の各 CloudFront でも再利用する。stg では enable_basic_auth=true で認証付きになり、preview もこの関数を共有するため認証付きになる。"
   value       = aws_cloudfront_function.spa_fallback.arn
+}
+
+output "cloudfront_waf_arn" {
+  description = "共有 CloudFront WAF（AWS マネージドルール）の ARN。stg frontend に加え preview の CloudFront もこれを使う（Basic 認証は WAF ではなく上記関数で行うため、全環境で WAF は1枚に集約）。"
+  value       = aws_wafv2_web_acl.cloudfront_waf.arn
 }
 
 # SES（メール送信）。preview は独自ドメインを SES 検証せず、stg の検証済み

@@ -23,3 +23,11 @@ _Avoid_: メール送信元ドメイン、SES 検証ドメイン
 **メール送信元ドメイン（SES 検証ドメイン）**:
 SES で検証済みの唯一のドメイン `${sub_frontend_domain_name}.<domain>`（例 `stg.www.mylabinfra.com`）。preview は独自ドメインを SES 検証せず、From をこの検証済みドメイン（`noreply@stg.www.<domain>`）に向けて送る。preview の閲覧ドメイン（`preview.<domain>`）は SES 未検証なので From に使えない。
 _Avoid_: preview の閲覧ドメイン、`preview_zone_apex`
+
+**マネージド WAF（`cloudfront_waf`）**:
+全環境（prod / stg / preview）共通の CloudFront 用 Web ACL。AWS マネージドルール（攻撃遮断）を担う。役割は「攻撃遮断」であって「アクセス制限（誰が入れるか）」ではない。WAF は全環境で1枚に集約する。
+_Avoid_: Basic 認証 WAF（Basic 認証は WAF ではなく CloudFront Function で行う）
+
+**Basic 認証（アクセス制限）**:
+stg / preview を外部非公開にするためのアクセス制限。WAF ではなく **CloudFront Function**（`spa_fallback` 関数に差し込む）で行い、`enable_basic_auth` で環境ごとに ON/OFF する（prod は false＝公開）。資格情報は SSM の生 `user:pass` を apply 時に関数へ焼き込む。
+_Avoid_: WAF Basic 認証、マネージド WAF（攻撃遮断とは別概念）

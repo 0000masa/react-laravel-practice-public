@@ -20,6 +20,12 @@ module "app" {
   enable_nat_gateway       = var.enable_nat_gateway
   app_env                  = var.app_env
 
+  # stg は外部非公開のため frontend CloudFront に Basic 認証（CF Function 方式）を掛ける。
+  # 認証情報は手動作成の SSM（生の "user:pass"）。preview も stg の同じ関数を共有する。
+  # prod ルート（将来）は enable_basic_auth を渡さない＝デフォルト false で公開のまま。
+  enable_basic_auth     = true
+  basic_auth_credential = data.aws_ssm_parameter.preview_basic_auth.value
+
   rds_config = var.rds_config
 
   ecs_web_service_config             = var.ecs_web_service_config

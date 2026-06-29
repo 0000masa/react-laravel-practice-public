@@ -28,7 +28,6 @@ output "aws_account_id" { value = module.app.aws_account_id }
 
 # --- preview 共有リソース（stg ルートの preview_shared.tf が実体。ADR 0007）---
 output "preview_cf_certificate_arn" { value = aws_acm_certificate_validation.preview_cf.certificate_arn }
-output "preview_waf_web_acl_arn" { value = aws_wafv2_web_acl.preview_basic_auth.arn }
 output "preview_permissions_boundary_arn" { value = aws_iam_policy.preview_boundary.arn }
 output "preview_deploy_role_arn" { value = module.gha_preview_deploy_role.arn }
 output "preview_api_origin_host" { value = local.preview_api_origin }
@@ -44,3 +43,6 @@ output "parameter_store_path" { value = module.app.parameter_store_path }
 # preview は stg の検証済み SES アイデンティティをそのまま使う（独自検証なし）
 output "ses_domain_identity_arn" { value = module.app.ses_domain_identity_arn }
 output "ses_domain_identity_name" { value = module.app.ses_domain_identity_name }
+
+# preview の CloudFront も共有のマネージド WAF を使う（Basic 認証は CF Function 側）
+output "cloudfront_waf_arn" { value = module.app.cloudfront_waf_arn }
