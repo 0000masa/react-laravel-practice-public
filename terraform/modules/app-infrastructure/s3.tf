@@ -5,7 +5,7 @@ resource "aws_s3_bucket" "frontend_bucket" {
   tags = {
     Name = "${var.project_name}-frontend-bucket"
   }
-  force_destroy = true
+  force_destroy = var.s3_force_destroy
 }
 
 #QR画像を保存するバケット
@@ -15,7 +15,7 @@ resource "aws_s3_bucket" "image_bucket" {
   tags = {
     Name = "${var.project_name}-images-bucket"
   }
-  force_destroy = true
+  force_destroy = var.s3_force_destroy
 }
 
 # S3バケットポリシー

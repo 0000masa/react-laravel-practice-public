@@ -93,6 +93,11 @@ preview（`pr-env`）はPRクローズで丸ごと destroy される使い捨て
 
 **ライフサイクル：Standard →（30日後）Glacier Instant Retrieval →（365日後）expire（削除）**
 
+ただし「小さいオブジェクト問題」（後述）への対策として、実装は**2ルールに分ける**：
+
+- **移行ルール**：`object_size_greater_than = 131072`（128KB超）のオブジェクトのみ、30日後に Glacier IR へ移行。128KB未満は移行せず Standard に留める（移行課金の無駄を避ける）。
+- **削除ルール**：サイズに関係なく**全オブジェクト**を365日後に expire（削除）。
+
 **なぜ最初の30日は S3 Standard か**
 
 - この期間は CloudWatch にも同じログがホットで残っている（保持30日）。S3 側の直近コピーを無理に冷やす必要はなく、移行リクエスト課金も先送りできる。CloudWatch から落ちるタイミングと S3 の冷却タイミングが揃う。
@@ -123,7 +128,20 @@ S3 ライフサイクルには小オブジェクトの罠がある（実装時�
 
 - **移行は1オブジェクトごとに課金される**（Glacier 系への移行は ~$0.05 / 1,000オブジェクト）。小さい `.gz` が大量だと、移行リクエスト課金が保存節約を上回りうる。
 - **2024年9月以降、128KB未満のオブジェクトはデフォルトで移行されない**。サイズフィルタで強制移行しても、Standard-IA / GIR では128KB分として課金される。
-- 対策：**Firehose のバッファを大きめにして、少数の大きい `.gz` にまとめる**（上記4の実装ポイント）。
+- 対策：**Firehose のバッファを大きめにして、少数の大きい `.gz` にまとめる**（上記4の実装ポイント）＋ **移行ルールに `object_size_greater_than = 131072` を付け、128KB未満は移行せず Standard に留める**（上記4の2ルール構成）。
+
+**低トラフィック環境では小オブジェクトが「常態」になる点に注意**
+
+Firehose は「サイズ（例64MB）に達する」か「時間（例300〜900秒）が経過する」かの**先に来た方**でS3に1オブジェクトを書く。stg のような低トラフィック環境では、64MB が溜まる前に時間バッファが先に発火するため、**毎フラッシュごとに小さな `.gz` が生成される**のが普通（ログがゼロの間は空オブジェクトは作られない）。だから stg では「小さいオブジェクトを Standard に留める」サイズフィルタの効果が大きい。
+
+**ストレージクラスを混在させても検索性・順序は崩れない**
+
+「128KB超は GIR、128KB未満は Standard」と1つのバケット内でクラスが混在するが、これはログ検索や前後関係に影響しない：
+
+- **ストレージクラスは課金の階層であって置き場所ではない**。GIR に移してもS3キー（`app-logs/yyyy/MM/dd/...`）も中身（タイムスタンプ・本文）も変わらない。移動・リネームは起きない。
+- **GIR は「即時取り出し（ミリ秒）」クラス**なので、通常の GetObject でそのまま読める（restore 不要）。**Athena は Standard のオブジェクトも GIR のオブジェクトも区別なく1クエリで横断**して読める。混在を意識する必要がない。
+- **ログの順序はストレージクラスと無関係**。順序はキーの時刻パーティション（`yyyy/MM/dd/HH`）と各レコードの timestamp フィールドで決まり、検索時に timestamp でソートする（`.gz` 内の時刻順は元々保証されない）。これはクラスが何でも同じ。
+- 補足：仮に一部を **Glacier Flexible / Deep Archive（非・即時クラス）** に置いていたら、それらは restore（12〜48時間）しないと Athena が読めずクエリに穴が空く。**GIR に統一したのでこの問題は起きない**（上記「Deep Archive を使わない理由」とも繋がる）。
 
 ### 6. 圧縮形式（gzip）
 
@@ -194,7 +212,7 @@ S3 自体の料金はそこまで高くなく、stg のログ量も少ないた�
 - [ ] **アーカイブ用 S3 バケット**（`aws_s3_bucket`）。`force_destroy` の扱いは要検討（監査ログを誤って消さない方針なら付けない）。
 - [ ] **public access block**（`aws_s3_bucket_public_access_block`、全ブロック）。
 - [ ] **暗号化**（`aws_s3_bucket_server_side_encryption_configuration`、まずは SSE-S3 / AES256 で十分。厳格なら KMS）。
-- [ ] **ライフサイクル**（`aws_s3_bucket_lifecycle_configuration`）：transition 30日→`GLACIER_IR`、expiration 365日。小オブジェクト対策に `filter { object_size_greater_than = 131072 }` の検討。
+- [ ] **ライフサイクル**（`aws_s3_bucket_lifecycle_configuration`）：**2ルール構成**。① 移行ルール = `filter { object_size_greater_than = 131072 }` ＋ transition 30日→`GLACIER_IR`（128KB超のみ移行）。② 削除ルール = 全件 expiration 365日。
 - [ ] **Firehose 配信ストリーム**（`aws_kinesis_firehose_delivery_stream`、destination = `extended_s3`）。バッファ大きめ（`buffering_size` 64〜128、`buffering_interval` 300〜900）。`prefix` で日付パーティション（例 `app-logs/!{timestamp:yyyy/MM/dd}/`）。
 - [ ] **Firehose 用 IAM ロール/ポリシー**（S3 への `PutObject` 等）。
 - [ ] **CloudWatch Logs → Firehose の subscription filter**（`aws_cloudwatch_log_subscription_filter`、`filter_pattern = ""` で全件、`role_arn` に CWL が Firehose に流す権限ロール）。

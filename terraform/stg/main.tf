@@ -26,6 +26,9 @@ module "app" {
   enable_basic_auth     = true
   basic_auth_credential = data.aws_ssm_parameter.preview_basic_auth.value
 
+  # stg は破棄・再作成しやすいよう全 S3 バケットを強制削除可に（prod ルートは未指定＝default false で保護）。
+  s3_force_destroy = true
+
   rds_config = var.rds_config
 
   ecs_web_service_config             = var.ecs_web_service_config

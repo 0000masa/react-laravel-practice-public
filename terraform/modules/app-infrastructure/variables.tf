@@ -209,6 +209,16 @@ variable "ecs_batch_daily_report_task_config" {
   })
 }
 
+variable "s3_force_destroy" {
+  description = <<-EOT
+    モジュール内 S3 バケットを terraform destroy 時に中身ごと強制削除するか。
+    stg は true（破棄・再作成しやすく）、prod は false（フロント資産・QR画像・監査ログを誤削除から守る）推奨。
+    安全側に倒すため default は false。stg ルートだけ明示的に true を渡す。
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "enable_basic_auth" {
   description = <<-EOT
     frontend CloudFront に Basic 認証（CloudFront Function 方式）を掛けるか。
