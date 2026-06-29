@@ -31,3 +31,7 @@ _Avoid_: Basic 認証 WAF（Basic 認証は WAF ではなく CloudFront Function
 **Basic 認証（アクセス制限）**:
 stg / preview を外部非公開にするためのアクセス制限。WAF ではなく **CloudFront Function**（`spa_fallback` 関数に差し込む）で行い、`enable_basic_auth` で環境ごとに ON/OFF する（prod は false＝公開）。資格情報は SSM の生 `user:pass` を apply 時に関数へ焼き込む。
 _Avoid_: WAF Basic 認証、マネージド WAF（攻撃遮断とは別概念）
+
+**ログのホット層 / コールド層**:
+ECS のログ（ロググループ `/ecs/${project_name}`）を保持期間で2層に分ける考え方。**ホット層** = CloudWatch Logs に直近30日。Logs Insights で即検索でき、日常の障害調査に使う。**コールド層** = そこから Firehose で S3 に退避し、Glacier Instant Retrieval 中心に1年保管する監査・長期保管用。通常は読まず、必要時に Athena 等で読む。stg/prod 共有モジュール側の仕組みで、preview には無い。設計は [docs/monitoring/cloudwatch-logs-s3-archival.md](../docs/monitoring/cloudwatch-logs-s3-archival.md)、方式判断は [ADR 0011](../docs/adr/0011-cloudwatch-logs-archive-via-firehose.md)。
+_Avoid_: バックアップ（DB バックアップとは別物）、エクスポートタスク方式（`CreateExportTask` は不採用）
