@@ -6,6 +6,8 @@
 
 React + Laravel のフルスタックアプリを **AWS (Terraform / ECS Fargate)** に本番相当で構築し、同じアプリを **GCP (Cloud Run)** に学習用として並行構築した、`kenshuu_2025` 配下の**自己学習・研修目的**のリポジトリ。フォーカスは AWS インフラ設計 (Terraform) と CI/CD 自動化。
 
+常設の AWS 環境（stg）に加え、**PR ごとに使い捨ての検証環境（preview 環境）**を自動で立ち上げる仕組みを持つ（`pr-<n>.preview.<domain>`、`preview` ラベルで作成・PR クローズで破棄）。
+
 - 概要・技術スタック・アーキ図・デプロイ構成: [README.md](./README.md)
 - AWS / GCP の2文脈の地図: [CONTEXT-MAP.md](./CONTEXT-MAP.md)
 
@@ -21,6 +23,7 @@ React + Laravel のフルスタックアプリを **AWS (Terraform / ECS Fargate
 ## ガードレール（Claude が勝手にやらないこと）
 
 - **状態変更系コマンドは実行しない。** `terraform apply` / `terraform destroy`、`gh` でのワークフロー起動（`terraform-apply-plan.yml`・`terraform-destroy-stg.yml`・`db-task.yml` 等）、デプロイ系コマンドは**提案にとどめ、実行はユーザーに任せる**。
+- **検証環境（preview）のワークフローは自動発火する状態変更系。** `preview-create.yml`（PR に `preview` ラベル付き＋ push で発火→ AWS リソース作成/更新）・`preview-destroy.yml`（PR クローズ/ラベル除去で発火→ destroy）は、**手動起動しないだけでなく、preview ラベルの付与/PR への push が即デプロイを引き起こす**ことを踏まえて提案する。詳細は [docs/deploy/pr-preview-environment.md](./docs/deploy/pr-preview-environment.md)。
 - **GCP の流儀を守る。** GCP は「**コンソールで手動作成 → `terraform import` でコード化**」が原則。`gcloud` CLI でのリソース作成や `apply` による新規作成はしない。`terraform/gcp/` の `.tf` は import 先として書かれている。([docs/gcp/overview.md](./docs/gcp/overview.md))
 - **Secrets / 資格情報を露出しない。** 実値のシークレット・資格情報をコミットやログに書かない。`.env` を勝手に編集しない。
 - **用語の正を尊重する。** 用語の定義の正は各 `.tf` と CONTEXT.md（[ルート CONTEXT.md](./CONTEXT.md) = GCP、[terraform/CONTEXT.md](./terraform/CONTEXT.md) = AWS）。勝手に用語を作り替えない。
@@ -64,10 +67,11 @@ npm run lint     # ESLint
 | 工夫点・改善点（Q&A サマリ） | [docs/notes/interview-prep.md](./docs/notes/interview-prep.md) |
 | AWS インフラ設計・コスト・ECS 設定 | `docs/aws-infra/`、用語の正は [terraform/CONTEXT.md](./terraform/CONTEXT.md) |
 | GCP (Cloud Run) 構成 | `docs/gcp/`、[overview.md](./docs/gcp/overview.md) |
-| デプロイ (ecspresso / CodeDeploy / PR プレビュー) | `docs/deploy/` |
+| デプロイ (ecspresso / CodeDeploy) | `docs/deploy/` |
+| PR ごとの検証環境 (preview 環境) | 正規ドキュメント [docs/deploy/pr-preview-environment.md](./docs/deploy/pr-preview-environment.md)、設計判断は ADR 0005〜0009（`docs/adr/`）、用語は [terraform/CONTEXT.md](./terraform/CONTEXT.md) |
 | 非同期処理・バッチ (SQS / 日次レポート) | `docs/app/` |
 | 監視 (Sentry / CloudWatch / X-Ray) | `docs/monitoring/` |
 | 設計判断の記録 | `docs/adr/` |
 | アプリ実体 | `frontend/www/`（React）、`backend/www/`（Laravel） |
-| IaC | `terraform/stg`・`terraform/modules`（AWS）、`terraform/gcp`（GCP） |
-| ECS デプロイ定義 | `ecspresso/`（Jsonnet） |
+| IaC | `terraform/stg`・`terraform/modules`（AWS 常設）、`terraform/pr-env`（AWS 検証環境 preview のルートモジュール）、`terraform/gcp`（GCP） |
+| ECS デプロイ定義 | `ecspresso/`（Jsonnet。preview は ecspresso 不使用で Terraform 管理） |
