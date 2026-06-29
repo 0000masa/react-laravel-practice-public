@@ -87,6 +87,14 @@ preview（`pr-env`）はPRクローズで丸ごと destroy される使い捨て
 - アーカイブ用の subscription filter は **filter_pattern を空（全件マッチ）** にする。既存のエラー通知フィルタ（ERROR/CRITICAL のみ）と違い、監査目的では**全ログを残す**必要がある。
 - ロググループ `/ecs/${project_name}` は web / queue worker / runner / batch の**全コンテナが集約**された単一ロググループ。退避対象はこれ1つでよい。
 - subscription filter は **1ロググループあたりデフォルト最大2本**。既存（Lambda）+ 新規（Firehose）= **ちょうど 2/2** で上限内。クォータ緩和申請は不要。
+- **アーカイブ用フィルタには `role_arn` が必要**（既存の Lambda 向けフィルタには無い）。これは配信先のタイプで認可方式が違うため：
+
+  | 配信先 | 認可方式 | フィルタの `role_arn` | 代わりに必要なもの |
+  | --- | --- | --- | --- |
+  | **Lambda** | Lambda 側のリソースベースポリシー | **不要** | `aws_lambda_permission`（関数側に「`logs.<region>.amazonaws.com` からの呼び出し」を許可） |
+  | **Firehose / Kinesis** | CloudWatch Logs がロールを AssumeRole | **必須** | AssumeRole 可能な IAM ロール（`firehose:PutRecord` 権限）を `role_arn` に渡す |
+
+  Lambda だけがリソースベースポリシーで呼び出しを受けられる特別扱い。Firehose にはその仕組みが無いので、CloudWatch Logs に「このロールを引き受けて Firehose に流していい」と渡す（本設計の `cwl-to-firehose-role`）。
 - **Firehose のバッファは大きめ**（例：サイズ 64〜128 MB / 時間 300〜900 秒）に設定する。小さい `.gz` が大量生成されると、後段の S3 ライフサイクル移行で「**128KB未満は移行対象外／128KB分課金**」「移行リクエスト課金が保存節約を食う」罠を踏むため（後述）。
 
 ### 4. S3 ストレージクラスとライフサイクル

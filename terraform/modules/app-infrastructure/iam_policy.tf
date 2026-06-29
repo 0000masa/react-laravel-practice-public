@@ -67,6 +67,55 @@ resource "aws_iam_policy" "firelens_cloudwatch_logs" {
   })
 }
 
+# ログアーカイブ: CloudWatch Logs が Firehose にレコードを流すための権限（当該ストリームに限定）
+resource "aws_iam_policy" "cwl_put_to_firehose" {
+  name        = "${var.project_name}-cwl-put-to-firehose"
+  description = "Allow CloudWatch Logs subscription filter to put records into the log-archive Firehose stream"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "PutToFirehose"
+        Effect = "Allow"
+        Action = [
+          "firehose:PutRecord",
+          "firehose:PutRecordBatch"
+        ]
+        Resource = aws_kinesis_firehose_delivery_stream.logs_archive.arn
+      }
+    ]
+  })
+}
+
+# ログアーカイブ: Firehose がアーカイブバケットへ書き込むための権限（当該バケットに限定）
+resource "aws_iam_policy" "firehose_write_logs_archive" {
+  name        = "${var.project_name}-firehose-write-logs-archive"
+  description = "Allow the log-archive Firehose stream to write objects to the archive bucket"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "S3Write"
+        Effect = "Allow"
+        Action = [
+          "s3:AbortMultipartUpload",
+          "s3:GetBucketLocation",
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:ListBucketMultipartUploads",
+          "s3:PutObject"
+        ]
+        Resource = [
+          aws_s3_bucket.logs_archive.arn,
+          "${aws_s3_bucket.logs_archive.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
 # ECS実行ロールにSSMの読み取り権限を追加するポリシー
 resource "aws_iam_policy" "ecs_execution_ssm_policy" {
   name = "${var.project_name}-execution-ssm-policy"

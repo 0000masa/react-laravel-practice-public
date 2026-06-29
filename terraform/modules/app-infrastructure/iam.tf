@@ -115,6 +115,52 @@ module "notification_lambda_role" {
   }
 }
 
+# --- ログアーカイブ: CloudWatch Logs → Firehose 用ロール ---
+# subscription filter が引き受け、Firehose にレコードを流す。
+module "cwl_to_firehose_role" {
+  source = "terraform-aws-modules/iam/aws//modules/iam-role"
+
+  name            = "${var.project_name}-cwl-to-firehose-role"
+  use_name_prefix = false
+
+  trust_policy_permissions = {
+    cwlogs = {
+      actions = ["sts:AssumeRole"]
+      principals = [{
+        type        = "Service"
+        identifiers = ["logs.ap-northeast-1.amazonaws.com"]
+      }]
+    }
+  }
+
+  policies = {
+    PutToFirehose = aws_iam_policy.cwl_put_to_firehose.arn
+  }
+}
+
+# --- ログアーカイブ: Firehose → S3 用ロール ---
+# Firehose ストリームが引き受け、アーカイブバケットに書き込む。
+module "firehose_logs_role" {
+  source = "terraform-aws-modules/iam/aws//modules/iam-role"
+
+  name            = "${var.project_name}-firehose-logs-role"
+  use_name_prefix = false
+
+  trust_policy_permissions = {
+    firehose = {
+      actions = ["sts:AssumeRole"]
+      principals = [{
+        type        = "Service"
+        identifiers = ["firehose.amazonaws.com"]
+      }]
+    }
+  }
+
+  policies = {
+    WriteToS3 = aws_iam_policy.firehose_write_logs_archive.arn
+  }
+}
+
 # --- RDS Enhanced Monitoring 用 IAM ロール ---
 module "rds_enhanced_monitoring_role" {
   source = "terraform-aws-modules/iam/aws//modules/iam-role"

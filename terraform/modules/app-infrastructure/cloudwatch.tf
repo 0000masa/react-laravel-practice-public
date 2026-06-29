@@ -17,6 +17,26 @@ resource "aws_cloudwatch_log_subscription_filter" "laravel_error_critical_to_lam
   depends_on = [aws_lambda_permission.allow_cloudwatch_logs_invoke]
 }
 
+# 全ログを S3 へ長期アーカイブするため Firehose に流す。
+# filter_pattern は空文字 = 全件マッチ（監査目的で全ログを残す）。
+# 上の error/critical → Lambda フィルタとは別物。subscription filter は
+# 1ロググループあたりデフォルト最大2本で、これで 2/2（上限内）。
+# 設計: docs/monitoring/cloudwatch-logs-s3-archival.md / ADR 0011
+resource "aws_cloudwatch_log_subscription_filter" "ecs_log_to_firehose_archive" {
+  name            = "${var.project_name}-ecs-log-to-firehose-archive"
+  log_group_name  = aws_cloudwatch_log_group.ecs_log.name
+  filter_pattern  = ""
+  destination_arn = aws_kinesis_firehose_delivery_stream.logs_archive.arn
+
+  # role_arn が必要な理由（上の Lambda 向けフィルタには無いのに、こちらには有る）:
+  #   配信先のタイプで認可方式が違う。
+  #   - Lambda 宛て: Lambda 側のリソースベースポリシー(aws_lambda_permission)で
+  #     「logs.<region>.amazonaws.com からの呼び出し」を許可する → フィルタに role_arn 不要。
+  #   - Firehose/Kinesis 宛て: そうしたリソースベースポリシーが無いため、CloudWatch Logs が
+  #     この role を AssumeRole して firehose:PutRecord を実行する → role_arn 必須。
+  role_arn = module.cwl_to_firehose_role.arn
+}
+
 # --- CloudWatch Alarm (Metric Math) ---
 resource "aws_cloudwatch_metric_alarm" "ecs_running_less_than_desired" {
   alarm_name        = "${var.project_name}-ecs-running-less-than-desired"
