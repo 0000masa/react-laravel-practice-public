@@ -96,6 +96,9 @@ preview（`pr-env`）はPRクローズで丸ごと destroy される使い捨て
 
   Lambda だけがリソースベースポリシーで呼び出しを受けられる特別扱い。Firehose にはその仕組みが無いので、CloudWatch Logs に「このロールを引き受けて Firehose に流していい」と渡す（本設計の `cwl-to-firehose-role`）。
 - **Firehose のバッファは大きめ**（例：サイズ 64〜128 MB / 時間 300〜900 秒）に設定する。小さい `.gz` が大量生成されると、後段の S3 ライフサイクル移行で「**128KB未満は移行対象外／128KB分課金**」「移行リクエスト課金が保存節約を食う」罠を踏むため（後述）。
+- **Firehose の配信エラーログを有効化する**（`cloudwatch_logging_options`）。これが無いと Firehose が S3 配信に失敗した際、原因（IAM 権限・バケット設定・KMS 等）を追えず、アーカイブが黙って失敗する事故に気づけない。専用ロググループ（`/aws/kinesisfirehose/...`、運用診断用なので保持は短め14日）に記録し、Firehose ロールに `logs:PutLogEvents` を付与する。
+  - **`error_output_prefix` とは別物**：`error_output_prefix` は配信失敗した**レコード（データ本体）**を S3 の `errors/` に退避するもの。`cloudwatch_logging_options` は失敗の**理由（エラーメッセージ）**を記録するもの。両方あって「失敗データも失敗理由も追える」状態になる。
+  - **ロググループとログストリームの関係**：CloudWatch Logs は2階層。**ロググループ**＝ログの入れ物・名前空間で、保持日数（`retention_in_days`）はここで持つ。**ログストリーム**＝その中に並ぶ「ログ行の実体の1本」。たとえると**ロググループ＝フォルダ、ログストリーム＝その中の1ファイル**。例：`/ecs/${project_name}` ロググループの中に、ECS がコンテナ/タスクごとにストリームを自動生成している。ECS/Lambda はストリームを実行時に自動生成するので Terraform で書かないが、Firehose の `cloudwatch_logging_options` は**書き込み先ストリーム名の指定が要る**ため、`aws_cloudwatch_log_stream`（名前 `S3Delivery`）を1本だけ先に作って渡している。先に作っておくと Firehose ロールの権限を `logs:PutLogEvents` だけに絞れる（自動生成させると `logs:CreateLogStream` も要る）。
 
 ### 4. S3 ストレージクラスとライフサイクル
 
@@ -213,19 +216,20 @@ S3 自体の料金はそこまで高くなく、stg のログ量も少ないた�
 
 ---
 
-## 実装で必要な Terraform リソース（チェックリスト）
+## 実装した Terraform リソース
 
-`terraform/modules/app-infrastructure/` に追加する想定。**学習目的のため実コードはここに書かず、必要なリソースと要点のみ列挙**する。
+`terraform/modules/app-infrastructure/`（stg/prod 共有）に実装済み。
 
-- [ ] **アーカイブ用 S3 バケット**（`aws_s3_bucket`）。`force_destroy` の扱いは要検討（監査ログを誤って消さない方針なら付けない）。
-- [ ] **public access block**（`aws_s3_bucket_public_access_block`、全ブロック）。
-- [ ] **暗号化**（`aws_s3_bucket_server_side_encryption_configuration`、まずは SSE-S3 / AES256 で十分。厳格なら KMS）。
-- [ ] **ライフサイクル**（`aws_s3_bucket_lifecycle_configuration`）：**2ルール構成**。① 移行ルール = `filter { object_size_greater_than = 131072 }` ＋ transition 30日→`GLACIER_IR`（128KB超のみ移行）。② 削除ルール = 全件 expiration 365日。
-- [ ] **Firehose 配信ストリーム**（`aws_kinesis_firehose_delivery_stream`、destination = `extended_s3`）。バッファ大きめ（`buffering_size` 64〜128、`buffering_interval` 300〜900）。`prefix` で日付パーティション（例 `app-logs/!{timestamp:yyyy/MM/dd}/`）。
-- [ ] **Firehose 用 IAM ロール/ポリシー**（S3 への `PutObject` 等）。
-- [ ] **CloudWatch Logs → Firehose の subscription filter**（`aws_cloudwatch_log_subscription_filter`、`filter_pattern = ""` で全件、`role_arn` に CWL が Firehose に流す権限ロール）。
-- [ ] **CWL→Firehose 用 IAM ロール**（`logs.amazonaws.com` を信頼、Firehose への `PutRecord*`）。
-- [ ] 変数化：保持日数・移行日数・バケット名などを `variables.tf` に出し、stg/prod で差し替え可能に。
+- [x] **アーカイブ用 S3 バケット**（`s3.tf` / `aws_s3_bucket.logs_archive`）。`force_destroy = var.s3_force_destroy`（stg=true / prod=default false）。
+- [x] **public access block**（`s3.tf`、全ブロック）。
+- [x] **暗号化**（`s3.tf`、SSE-S3 / AES256 を明示）。
+- [x] **ライフサイクル**（`s3.tf`、**2ルール**）。① 移行ルール = `filter { object_size_greater_than = 131072 }` ＋ transition 30日→`GLACIER_IR`。② 削除ルール = 全件 expiration 365日。
+- [x] **Firehose 配信ストリーム**（`firehose.tf` / `aws_kinesis_firehose_delivery_stream.logs_archive`）。`buffering_interval = 900` / `buffering_size = 64`、`prefix = "app-logs/!{timestamp:yyyy/MM/dd/}"`、`error_output_prefix`、`cloudwatch_logging_options`（配信エラーログ有効）。圧縮は展開せず gzip のまま。
+- [x] **Firehose 配信エラー用ロググループ + ストリーム**（`cloudwatch.tf` / `aws_cloudwatch_log_group.firehose_logs_archive`・`aws_cloudwatch_log_stream...`）。保持14日。
+- [x] **Firehose → S3 用 IAM ロール/ポリシー**（`iam.tf` の `firehose_logs_role` / `iam_policy.tf` の `firehose_write_logs_archive`）。S3 書き込み権限 ＋ エラーログ用 `logs:PutLogEvents`。
+- [x] **CloudWatch Logs → Firehose の subscription filter**（`cloudwatch.tf` / `ecs_log_to_firehose_archive`、`filter_pattern = ""` で全件、`role_arn` 指定）。
+- [x] **CWL→Firehose 用 IAM ロール/ポリシー**（`iam.tf` の `cwl_to_firehose_role` / `iam_policy.tf` の `cwl_put_to_firehose`）。`logs.ap-northeast-1.amazonaws.com` を信頼、Firehose への `PutRecord*`。
+- [x] **環境差は `s3_force_destroy`（bool）のみ変数化**。ライフサイクル日数・バッファ・保持日数は stg/prod 共通のためモジュール内ハードコード。
 
 ---
 

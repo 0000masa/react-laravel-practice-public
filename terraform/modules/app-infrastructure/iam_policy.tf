@@ -111,6 +111,15 @@ resource "aws_iam_policy" "firehose_write_logs_archive" {
           aws_s3_bucket.logs_archive.arn,
           "${aws_s3_bucket.logs_archive.arn}/*"
         ]
+      },
+      {
+        # 配信エラーの理由を CloudWatch Logs に書くための権限（当該ロググループに限定）。
+        Sid    = "WriteDeliveryErrorLogs"
+        Effect = "Allow"
+        Action = [
+          "logs:PutLogEvents"
+        ]
+        Resource = "${aws_cloudwatch_log_group.firehose_logs_archive.arn}:*"
       }
     ]
   })

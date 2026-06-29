@@ -4,6 +4,24 @@ resource "aws_cloudwatch_log_group" "ecs_log" {
   retention_in_days = 30 //30日で消す
 }
 
+# ログアーカイブ用 Firehose の「配信エラーの理由」を記録するロググループ。
+# これが無いと Firehose が S3 配信に失敗した際、原因(IAM/バケット等)を追えない。
+# 運用診断用なので保持は短め(14日)。アーカイブ対象ではない(subscriptionには流さない)。
+resource "aws_cloudwatch_log_group" "firehose_logs_archive" {
+  name              = "/aws/kinesisfirehose/${var.project_name}-logs-archive"
+  retention_in_days = 14
+}
+
+# CloudWatch Logs は2階層: ロググループ(器・保持日数を持つ) > ログストリーム(ログ行の実体の1本)。
+# 例: /ecs/<project> ロググループの中に、ECS がコンテナ/タスクごとにストリームを自動生成している。
+# ECS/Lambda はストリームを実行時に自動生成するので明示不要だが、Firehose の
+# cloudwatch_logging_options は書き込み先ストリーム名の指定が要る。ここで1本先に作っておくことで
+# Firehose ロールの権限を logs:PutLogEvents だけに絞れる(自動生成させると CreateLogStream も必要になる)。
+resource "aws_cloudwatch_log_stream" "firehose_logs_archive_s3_delivery" {
+  name           = "S3Delivery"
+  log_group_name = aws_cloudwatch_log_group.firehose_logs_archive.name
+}
+
 # staging.ERROR または staging.CRITICAL を Lambda に流す
 resource "aws_cloudwatch_log_subscription_filter" "laravel_error_critical_to_lambda" {
   name           = "${var.project_name}-laravel-error-to-lambda"

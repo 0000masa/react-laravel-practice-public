@@ -26,5 +26,14 @@ resource "aws_kinesis_firehose_delivery_stream" "logs_archive" {
     prefix = "app-logs/!{timestamp:yyyy/MM/dd/}"
     # S3 書き込みに失敗したレコードの退避先。
     error_output_prefix = "errors/!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd/}"
+
+    # 配信エラーの「理由」を CloudWatch Logs に記録する（失敗データの退避先=
+    # error_output_prefix とは別物。あちらは失敗レコード、こちらは失敗理由）。
+    # 有効化には firehose_logs_role に logs:PutLogEvents が必要。
+    cloudwatch_logging_options {
+      enabled         = true
+      log_group_name  = aws_cloudwatch_log_group.firehose_logs_archive.name
+      log_stream_name = aws_cloudwatch_log_stream.firehose_logs_archive_s3_delivery.name
+    }
   }
 }
