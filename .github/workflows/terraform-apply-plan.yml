@@ -95,15 +95,24 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
-      # 計画
+      # 計画（-out でプランを保存し、要約と apply に再利用する）
       - name: Terraform Plan
         id: plan
         run: |
-          terraform plan -no-color \
+          terraform plan -no-color -out=tfplan \
             -var="enable_nat_gateway=${{ env.IS_ENABLE_NAT_GATEWAY }}"
 
+      # 作成/変更/削除されるリソースを Summary に出す（AIなし・値なし。詳細は ADR 0010）。
+      # apply の手前に置くことで、要約に失敗したら apply まで止まる（フェイルクローズ）。
+      - name: Summarize plan
+        uses: ./.github/actions/tf-plan-summary
+        with:
+          plan-file: tfplan
+          working-directory: ./terraform/${{ inputs.target_env }}
+          title: ${{ inputs.target_env }}
+
+      # 保存したプランをそのまま適用する。再計算しないので plan で見た内容と一致する。
+      # 保存済みプランの apply は対話確認が無く、-var も指定不可。
       - name: Terraform Apply
         if: inputs.action == 'apply'
-        run: |
-          terraform apply -auto-approve -input=false \
-            -var="enable_nat_gateway=${{ env.IS_ENABLE_NAT_GATEWAY }}"
+        run: terraform apply -input=false tfplan

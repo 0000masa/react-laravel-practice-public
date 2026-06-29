@@ -1,0 +1,78 @@
+# Terraform のプラン（-out で保存したファイル）を解析し、
+# 作成/更新/削除/置き換えされるリソースの一覧を GitHub Actions の Summary に出す。
+#
+# 方針（ADR 0010）:
+#   - AI は使わない。`terraform show -json` の構造化出力を jq でパースする（決定的・課金/外部送信なし）。
+#   - レベル1（値は出さない）。アクション種別とリソースアドレスのみ。秘密漏洩を避けるため before/after の値は扱わない。
+#   - フェイルクローズ。show / jq が失敗したら set -e でステップごと失敗する（呼び出し側で apply の手前に置くこと）。
+name: "Terraform Plan Summary"
+description: "terraform show -json のプランを解析し、作成/更新/削除されるリソース一覧を Summary に出力する（AIなし・値なし）"
+
+inputs:
+  plan-file:
+    description: "terraform plan -out で保存したプランファイル名（例: tfplan）"
+    required: true
+  working-directory:
+    description: "terraform を実行するディレクトリ（plan を保存した場所）"
+    required: true
+  title:
+    description: "Summary の見出しに使うラベル（例: stg / PR #42 preview）"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        PLAN_FILE: ${{ inputs.plan-file }}
+        TITLE: ${{ inputs.title }}
+      run: |
+        set -euo pipefail
+
+        # 保存済みプランを JSON 化。要求A（一覧）に必要なのは actions と address だけ。
+        terraform show -json "$PLAN_FILE" > plan.json
+
+        # アクションを4分類して "category<TAB>address" で書き出す。
+        #   ["create","delete"] / ["delete","create"] = replace（置き換え）
+        #   no-op / read は読み飛ばす（変更ではない）
+        jq -r '
+          (.resource_changes // [])[]
+          | .address as $addr
+          | .change.actions as $a
+          | if   ($a == ["no-op"]) or ($a == ["read"]) then empty
+            elif (($a | index("create")) and ($a | index("delete"))) then "replace\t" + $addr
+            elif ($a == ["create"]) then "create\t" + $addr
+            elif ($a == ["update"]) then "update\t" + $addr
+            elif ($a == ["delete"]) then "delete\t" + $addr
+            else (($a | join(",")) + "\t" + $addr)
+            end
+        ' plan.json > changes.tsv
+
+        # 指定カテゴリのアドレスを箇条書きにして Summary 用テキストにする関数。
+        section() {
+          local cat="$1" emoji="$2" label="$3"
+          local items count
+          # TSV の第1列がカテゴリ一致する行の、第2列（アドレス）を取り出す。
+          items=$(awk -F'\t' -v c="$cat" '$1==c {print $2}' changes.tsv)
+          # 非空行を数える（0件なら grep が 1 を返すので || true で握りつぶす）。
+          count=$(printf '%s' "$items" | grep -c . || true)
+          echo "### ${emoji} ${label} (${count})"
+          if [ "$count" -eq 0 ]; then
+            echo "_なし_"
+          else
+            # 各アドレスをバッククォートで囲んだリスト項目にする。
+            printf '%s\n' "$items" | sed 's/^/- `/; s/$/`/'
+          fi
+          echo
+        }
+
+        # Summary（Markdown）を組み立てて $GITHUB_STEP_SUMMARY に追記。
+        {
+          echo "## 📋 Terraform Plan: ${TITLE}"
+          echo
+          section create  "🟢" "Create"
+          section update  "🟡" "Update"
+          section replace "♻️" "Replace"
+          section delete  "🔴" "Delete"
+        } >> "$GITHUB_STEP_SUMMARY"
