@@ -33,7 +33,7 @@ stg / preview を外部非公開にするためのアクセス制限。WAF で�
 _Avoid_: WAF Basic 認証、マネージド WAF（攻撃遮断とは別概念）
 
 **RDS 監視の検知層 / 分析層**:
-RDS の監視を役割で2層に分ける考え方。**検知層** = 異常に「気づく」仕組み（RDS ログのメトリクスフィルタ + CloudWatch アラーム + RDS Event Subscription → SNS）。Performance Insights に依存せず、stg / prod 想定で Terraform コードは変わらない。**分析層** = 通知を受けた後に原因を掘る手段（PI が使える環境では PI、stg では slowquery ログを Logs Insights で集計）。PI の有無が変えるのは分析層の快適さだけ。判断は [ADR 0012](../docs/adr/0012-rds-monitoring-detection-analysis-separation.md)。
+RDS の監視を役割で2層に分ける考え方。**検知層** = 異常に「気づく」仕組み（RDS ログのメトリクスフィルタ + CloudWatch アラーム + RDS Event Subscription → SNS）。Performance Insights に依存せず、stg / prod 想定で Terraform コードは変わらない。**分析層** = 通知を受けた後に原因を掘る手段（Enhanced Monitoring のプロセス別 OS メトリクス、PI が使える環境では PI、stg では slowquery ログを Logs Insights で集計）。PI の有無が変えるのは分析層の快適さだけ。判断は [ADR 0012](../docs/adr/0012-rds-monitoring-detection-analysis-separation.md)、ツールの解説は [docs/monitoring/rds-observability-tools.md](../docs/monitoring/rds-observability-tools.md)。
 _Avoid_: 「PI を有効にすれば通知が来る」という理解（PI 自体に通知・アラーム機能は無い）
 
 **ログのホット層 / コールド層**:

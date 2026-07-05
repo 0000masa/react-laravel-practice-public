@@ -3,7 +3,7 @@
 RDS（MariaDB）のログの扱いと「異常に気づく仕組み」の設計のまとめ。
 対象は **`terraform/modules/app-infrastructure/`**（stg と将来の prod が共有するモジュール）。preview 環境（`terraform/pr-env/`）は独自の RDS を持たず stg の RDS を共有するため（`pr-env/locals.tf` が remote state 経由で `rds_address` を参照）、この設計の対象 RDS は実質1台。
 
-> このドキュメントは「なぜこの設計にしたか」の記録。検知層/分析層の分離と Performance Insights の扱いの判断は [ADR 0012](../adr/0012-rds-monitoring-detection-analysis-separation.md)、用語は [terraform/CONTEXT.md](../../terraform/CONTEXT.md) を参照。
+> このドキュメントは「なぜこの設計にしたか」の記録。検知層/分析層の分離と Performance Insights の扱いの判断は [ADR 0012](../adr/0012-rds-monitoring-detection-analysis-separation.md)、用語は [terraform/CONTEXT.md](../../terraform/CONTEXT.md) を参照。標準メトリクス / Enhanced Monitoring / Performance Insights の違い・料金・環境別の使い分けの一般知識は [rds-observability-tools.md](./rds-observability-tools.md) を参照。
 
 ---
 
