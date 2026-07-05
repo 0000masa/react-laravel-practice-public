@@ -158,6 +158,26 @@ destroy 後に Terraform 管理外の何かが残る点は「孤児ロググル�
 
 ---
 
+## 補足：Enhanced Monitoring の `RDSOSMetrics` ロググループは Terraform 管理しない
+
+Enhanced Monitoring のデータはメトリクスではなく CloudWatch **Logs**（`RDSOSMetrics` ロググループ）に書かれる。「Logs に書かれるなら、RDS エラーログのときのように Terraform 管理が必要では？」という疑問が湧くが、**管理不要**と判断した。同じ「RDS が自動作成するロググループ」でも条件が2つ決定的に違う。
+
+**① 「無期限」の罠が存在しない。** RDS エラーログのロググループを Terraform 管理にした動機は「自動作成だと保持期間が無期限になり、コストが際限なく積み上がる」ことだった。`RDSOSMetrics` は**デフォルトで保持期間30日**が設定される（[公式](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_Monitoring.OS.html)に "By default, Enhanced Monitoring metrics are stored for 30 days" と明記）。放置してもコストは自動的に頭打ちで、retention を設定しに行く動機が最初からない。
+
+**② このモジュールの持ち物ではない。** `RDSOSMetrics` は名前が固定で、**リージョン内の全 RDS インスタンスが共有する1つのロググループ**（インスタンスごとに分かれるのはグループではなく中のログストリーム）。プロジェクト専用だった `/aws/rds/instance/<identifier>/error` とは所有の単位が違う。プロジェクト単位のモジュールで管理すると、同一アカウントの別プロジェクトが EM を使ったとき同じグループを取り合い、この環境の destroy が共有リソースを消そうとしてしまう。
+
+| | `/aws/rds/instance/<identifier>/error` 等 | `RDSOSMetrics` |
+| --- | --- | --- |
+| デフォルト保持 | **無期限**（罠） | **30日**（安全） |
+| 所有の単位 | この DB 専用 → モジュールの持ち物 | リージョン共有 → モジュールの持ち物ではない |
+| Terraform 管理 | する（[rds-log-monitoring.md 決定2](./rds-log-monitoring.md)） | **しない** |
+
+組織として EM ログの保持期間を変えたい場合（例: 7日に短縮）は、アプリのモジュールではなく**アカウント基盤レベルの Terraform**（本リポジトリには無い層）で `terraform import` して管理するのが正しい置き場所。
+
+一般化すると、自動作成ロググループを Terraform 管理すべきかは「**デフォルト保持が無期限か**」と「**所有の単位がこのスタックと一致するか**」の2軸で判断できる。
+
+---
+
 ## 参考（一次情報）
 
 - [Amazon CloudWatch concepts（namespace / metric / dimension の定義、メトリクスの保持期間）](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch_concepts.html)
@@ -166,3 +186,4 @@ destroy 後に Terraform 管理外の何かが残る点は「孤児ロググル�
 - [Amazon ECS CloudWatch metrics（AWS/ECS 標準メトリクス）](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/cloudwatch-metrics.html)
 - [Monitor Amazon ECS containers using Container Insights with enhanced observability（有料・オプトインの根拠）](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/cloudwatch-container-insights.html)
 - [Amazon CloudWatch metrics for Amazon RDS（AWS/RDS 標準メトリクス）](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-metrics.html)
+- [Monitoring OS metrics with Enhanced Monitoring（RDSOSMetrics のデフォルト保持30日の根拠）](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_Monitoring.OS.html)

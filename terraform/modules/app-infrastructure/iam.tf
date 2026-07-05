@@ -162,6 +162,13 @@ module "firehose_logs_role" {
 }
 
 # --- RDS Enhanced Monitoring 用 IAM ロール ---
+# 標準メトリクス(AWS/RDS)は AWS 側のパイプラインで発行されるだけなので権限不要だが、
+# Enhanced Monitoring は OS 内エージェントの収集データを「このアカウントの」CloudWatch Logs
+# (RDSOSMetrics ロググループ)にログとして書き込む。AWS のサービスが顧客アカウント内の
+# リソースを操作するには顧客が委任した IAM ロールが必須 — そのため RDS の監視サービス
+# (monitoring.rds.amazonaws.com)が AssumeRole できるロールを渡す。マネージドポリシーの
+# 中身は logs:CreateLogGroup / PutLogEvents 等の Logs 書き込み権限。
+# 上の cwl_to_firehose_role(CloudWatch Logs → Firehose の委任)と同じ「サービスへの委任」パターン。
 module "rds_enhanced_monitoring_role" {
   source = "terraform-aws-modules/iam/aws//modules/iam-role"
 
