@@ -15,7 +15,7 @@ RDS の監視・分析に使える3つの仕組みの違い・料金・環境別
 | 得意なこと | 個々の事象の内容・文脈の調査 | 傾向の把握、閾値判定 |
 | CloudWatch アラーム | **直接は監視できない** | **監視できる（アラームの対象はメトリクスのみ）** |
 
-CloudWatch アラームができるのは「数値と閾値の比較」だけなので、ログを検知に使うには**メトリクスフィルタで数値に変換する**必要がある（例:「`[ERROR]` を含む行の件数」というメトリクスを作る）。本リポジトリの RDS エラーログ・スロークエリの検知はこの方式（[rds-log-monitoring.md 決定3・4](./rds-log-monitoring.md)）。
+CloudWatch アラームができるのは「数値と閾値の比較」だけなので、ログを検知に使うには**メトリクスフィルタで数値に変換する**必要がある（例:「`[ERROR]` を含む行の件数」というメトリクスを作る）。本リポジトリの RDS エラーログ・スロークエリの検知はこの方式（[rds-log-monitoring.md 決定3・4](./rds-log-monitoring.md)）。メトリクスの一意識別（namespace / metric_name / dimensions）やメトリクスフィルタ・アラーム評価の仕組みの詳細は [cloudwatch-metrics-and-alarms.md](./cloudwatch-metrics-and-alarms.md) を参照。
 
 ---
 
