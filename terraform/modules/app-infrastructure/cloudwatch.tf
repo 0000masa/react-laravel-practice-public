@@ -141,7 +141,11 @@ resource "aws_cloudwatch_log_group" "rds_slowquery" {
 
 # --- メトリクスフィルタ ---
 # エラーログ: MariaDB の深刻度タグ [ERROR] の行だけカウントする。
-# [Warning] は起動時等にも出るノイズなので対象外。
+# エラーログは名前に反してエラー以外も流れる: 起動・シャットダウン・InnoDB 初期化などの
+# 通常メッセージは [Note]、軽微な警告は [Warning] のタグで出力され、正常稼働中の
+# エラーログはほぼ [Note] だけ。つまり「ロググループにログが流れている」のに
+# メトリクスが出現しないのは正常（[ERROR] 行が来て初めてメトリクスが発行される）。
+# [Warning] は起動時等にも出るノイズなので意図的に対象外。
 # パターンに [] を含むため引用符で囲んだ完全一致タームにしている。
 resource "aws_cloudwatch_log_metric_filter" "rds_error_log" {
   name           = "${var.project_name}-rds-error-log"
