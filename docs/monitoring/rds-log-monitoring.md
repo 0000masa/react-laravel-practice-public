@@ -59,6 +59,18 @@ RDS のログが CloudWatch に届くまでには、独立した2つの段階が
 - エクスポートしなくてもログが「無い」わけではない。ログファイルは RDS インスタンス内に存在し、コンソールの「ログとイベント」タブや CLI（`aws rds download-db-log-file-portion`）で閲覧できる。ただし RDS（MariaDB）は組み込みのローテーションを持ち、**ログは1時間ごとに回転・24時間より古いファイルは自動削除**され、合計サイズも**割当ストレージの2%まで**に制約される（ユーザー側で変更不可。[公式](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_LogAccess.MariaDB.LogFileSize.html)）。インスタンス内で見られるのは常に直近1日分だけなので、保存・検索・アラートの土台にするなら CloudWatch へのエクスポートが前提になる
 - 蛇口とホースは独立している。例えばエクスポートだけ止めても（ホースを外しても）生成は続くし、CloudWatch 上の既存ログは保持期間が切れるまで残る
 
+### インスタンス内ログの保持はエンジンごとに違う
+
+「インスタンス内のログを自動で整理する」という思想は RDS 全エンジン共通だが（マネージドサービスとして、ログでディスクが埋まり DB が停止するのを自衛している）、ルールと「変更できるかどうか」はエンジンごとに異なる。これは Linux の `logrotate` をユーザーが設定しているのではなく、RDS に組み込まれた仕組みで外せない。
+
+| エンジン | ローテーション | インスタンス内の保持 | ユーザーによる変更 |
+| --- | --- | --- | --- |
+| **MariaDB**（本リポ） | 1時間ごと | **24時間**より古いファイルは削除。合計は割当ストレージの2%まで | **不可**（[公式](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_LogAccess.MariaDB.LogFileSize.html)） |
+| MySQL | 1時間ごと | **2週間**より古いファイルは削除。合計は割当ストレージの2%まで | **不可**（[公式](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_LogAccess.MySQL.LogFileSize.html)） |
+| PostgreSQL | ローテーションあり | **デフォルト3日**（`rds.log_retention_period = 4320` 分） | **可能**（1日〜最大7日。[公式](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_LogAccess.Concepts.PostgreSQL.overview.parameter-groups.html)） |
+
+同じ MySQL 系でも MariaDB は24時間・MySQL は2週間と大きく違う。ただしどのエンジンでも上限は高々数日〜2週間で、**「インスタンス内のログは長期保管の場所ではない」という設計は共通**（PostgreSQL のドキュメント自身が CloudWatch Logs への発行を推奨している）。エンジンごとに変わるのは「エクスポートしなかった場合に何日分残るか」という定数だけで、本設計の検知層はどのエンジンでもそのまま通用する。なお、`log_output = TABLE` で DB 内テーブルに書いた場合はこの自動削除の対象外で、**手動でローテーションしない限り増え続ける**（`CALL mysql.rds_rotate_slow_log`）— FILE 出力を選ぶ理由がここにもある。
+
 ---
 
 ## 各決定と理由
