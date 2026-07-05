@@ -31,6 +31,36 @@ RDS の監視を役割で2層に分離する（[ADR 0012](../adr/0012-rds-monito
 
 ---
 
+## 前提知識：RDS のログは「生成」と「エクスポート」の2段階
+
+RDS のログが CloudWatch に届くまでには、独立した2つの段階がある。水道に例えると**蛇口（生成）**と**ホース（エクスポート）**。
+
+```
+[MariaDB エンジン内部]                  [RDS の機能]                    [CloudWatch Logs]
+ログを生成する                   →      ログファイルを転送する      →    ロググループに蓄積
+（蛇口: パラメータグループ）            （ホース: enabled_cloudwatch_logs_exports）
+```
+
+**第1段階: 生成（蛇口）** — MariaDB 自身が「そのログを書くかどうか・どこに書くか」を決める。ログ種別ごとにルールが違う。
+
+| ログ種別 | 生成のスイッチ | `log_output` の影響 |
+| --- | --- | --- |
+| エラーログ | **常に ON（切れない）** | **受けない。常にファイルに書かれる** |
+| スロークエリログ | `slow_query_log = 1` が必要（デフォルト OFF） | 受ける。`TABLE`（デフォルト）だと DB 内のテーブル `mysql.slow_log` に、`FILE` だとログファイルに書かれる |
+| general ログ | `general_log = 1` が必要（デフォルト OFF） | 同上（`mysql.general_log` テーブル or ファイル） |
+
+**第2段階: エクスポート（ホース）** — `enabled_cloudwatch_logs_exports` は「RDS インスタンス内に書かれた**ログファイル**を CloudWatch Logs へ転送する」機能。ここに2つの重要な含意がある。
+
+1. ホースを繋いでいないログ種別は CloudWatch には一切流れない
+2. **RDS が CloudWatch に流せるのはファイル出力されたログだけ**。`log_output = TABLE` のままだとスロークエリは `mysql.slow_log` テーブルに書かれるため、エクスポートを有効にしても転送すべきファイルが存在せず、何も流れない。これが本設計でパラメータグループに `log_output = FILE` を設定している理由（エラーログは `log_output` と無関係に常にファイルなので、この設定がなくても転送できる）
+
+補足:
+
+- エクスポートしなくてもログが「無い」わけではない。ログファイルは RDS インスタンス内に存在し、コンソールの「ログとイベント」タブや CLI（`aws rds download-db-log-file-portion`）で閲覧できる。ただし RDS（MariaDB）は組み込みのローテーションを持ち、**ログは1時間ごとに回転・24時間より古いファイルは自動削除**され、合計サイズも**割当ストレージの2%まで**に制約される（ユーザー側で変更不可。[公式](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_LogAccess.MariaDB.LogFileSize.html)）。インスタンス内で見られるのは常に直近1日分だけなので、保存・検索・アラートの土台にするなら CloudWatch へのエクスポートが前提になる
+- 蛇口とホースは独立している。例えばエクスポートだけ止めても（ホースを外しても）生成は続くし、CloudWatch 上の既存ログは保持期間が切れるまで残る
+
+---
+
 ## 各決定と理由
 
 ### 1. ログ種別：`error` + `slowquery` を有効化・エクスポート（general / audit は使わない）
@@ -48,7 +78,7 @@ RDS for MariaDB で扱えるログは4種類（[公式: Publishing MariaDB logs 
 
 - `slow_query_log = 1` … スロークエリログの生成を有効化
 - `long_query_time = 1` … 閾値1秒。MariaDB デフォルトは10秒だが、Web アプリで10秒は既に大事故。**1〜2秒に締めるのが実務の定石**（AWS 公式の設定例も 1.0 秒）
-- `log_output = FILE` … **CloudWatch へのエクスポートは FILE 出力が前提**。RDS for MySQL/MariaDB のデフォルトは TABLE なので明示的な変更が必要
+- `log_output = FILE` … **CloudWatch へのエクスポートは FILE 出力が前提**。RDS for MySQL/MariaDB のデフォルトは TABLE なので明示的な変更が必要（仕組みは上の「前提知識」セクション参照）
 - `log_queries_not_using_indexes` は **OFF のまま**（小さいテーブルへの正常なクエリもノイズとして拾うため）
 
 ### 2. ロググループは Terraform 管理・保持30日
