@@ -10,7 +10,7 @@ RDS（MariaDB）のログの扱いと「異常に気づく仕組み」の設計�
 ## 背景・課題（設計前の状態）
 
 - RDS のログは `enabled_cloudwatch_logs_exports = ["error"]` で**エラーログだけ** CloudWatch Logs にエクスポートされていた。ただしそのロググループは RDS が自動作成したもので **Terraform 管理外・保持期間「無期限」**（コストが際限なく積み上がる典型的な落とし穴）。
-- **スロークエリログは二重に無効**だった。①エクスポート対象外、②そもそもカスタムパラメータグループが無く MariaDB の `slow_query_log` が OFF（= RDS 内部でもログが生成されていない）。
+- **スロークエリログは二重に無効**だった。①エクスポート対象外、②そもそもカスタムパラメータグループが無く MariaDB の `log_slow_query` が OFF（= RDS 内部でもログが生成されていない）。
 - エクスポートされたエラーログに**サブスクリプションフィルタ・メトリクスフィルタ・アラームが一切なく、エラーが出ても誰も気づけない**。
 - RDS 用の CloudWatch メトリクスアラームなし、RDS Event Subscription なし、Enhanced Monitoring 無効、Performance Insights 無効。
 
@@ -46,7 +46,7 @@ RDS のログが CloudWatch に届くまでには、独立した2つの段階が
 | ログ種別 | 生成のスイッチ | `log_output` の影響 |
 | --- | --- | --- |
 | エラーログ | **常に ON（切れない）** | **受けない。常にファイルに書かれる** |
-| スロークエリログ | `slow_query_log = 1` が必要（デフォルト OFF） | 受ける。`TABLE`（デフォルト）だと DB 内のテーブル `mysql.slow_log` に、`FILE` だとログファイルに書かれる |
+| スロークエリログ | `log_slow_query = 1` が必要（デフォルト OFF。MariaDB 10.11 で改名される前の旧名称は `slow_query_log`） | 受ける。`TABLE`（デフォルト）だと DB 内のテーブル `mysql.slow_log` に、`FILE` だとログファイルに書かれる |
 | general ログ | `general_log = 1` が必要（デフォルト OFF） | 同上（`mysql.general_log` テーブル or ファイル） |
 
 **第2段階: エクスポート（ホース）** — `enabled_cloudwatch_logs_exports` は「RDS インスタンス内に書かれた**ログファイル**を CloudWatch Logs へ転送する」機能。ここに2つの重要な含意がある。
@@ -88,8 +88,9 @@ RDS for MariaDB で扱えるログは4種類（[公式: Publishing MariaDB logs 
 
 `slowquery` の有効化には**カスタムパラメータグループ**（`aws_db_parameter_group`）が必要:
 
-- `slow_query_log = 1` … スロークエリログの生成を有効化
-- `long_query_time = 1` … 閾値1秒。MariaDB デフォルトは10秒だが、Web アプリで10秒は既に大事故。**1〜2秒に締めるのが実務の定石**（AWS 公式の設定例も 1.0 秒）
+- `log_slow_query = 1` … スロークエリログの生成を有効化
+- `log_slow_query_time = 1` … 閾値1秒。MariaDB デフォルトは10秒だが、Web アプリで10秒は既に大事故。**1〜2秒に締めるのが実務の定石**（AWS 公式の設定例も 1.0 秒）
+- **パラメータ名の注意**: MariaDB 10.11 でスロークエリ関連の変数が改名され、`mariadb11.4` ファミリーは新名称のみ受け付ける。MySQL や古い MariaDB の旧名称（`slow_query_log` / `long_query_time`）を指定すると apply 時に `InvalidParameterValue: Could not find parameter` で失敗する（実際に一度踏んだエラー）
 - `log_output = FILE` … **CloudWatch へのエクスポートは FILE 出力が前提**。RDS for MySQL/MariaDB のデフォルトは TABLE なので明示的な変更が必要（仕組みは上の「前提知識」セクション参照）
 - `log_queries_not_using_indexes` は **OFF のまま**（小さいテーブルへの正常なクエリもノイズとして拾うため）
 
@@ -130,7 +131,7 @@ RDS for MariaDB で扱えるログは4種類（[公式: Publishing MariaDB logs 
 2. 通知するなら**件数の閾値**で「異常な急増」だけ拾う
 3. ログ自体は定期集計・レビューへ
 
-本リポでは stg のインスタンスクラス（db.t4g.micro）が PI 非対応（後述）のため、**メトリクスフィルタで件数をカウントし「5分間に5件以上」でアラーム**する方式を採る。`long_query_time = 1秒` との組み合わせで「1秒超えのクエリが5分で5回 = 明らかな異常」の水準。閾値は運用しながらベースラインに合わせて調整する（最初から完璧な閾値は誰にも分からない、が実務の作法）。
+本リポでは stg のインスタンスクラス（db.t4g.micro）が PI 非対応（後述）のため、**メトリクスフィルタで件数をカウントし「5分間に5件以上」でアラーム**する方式を採る。`log_slow_query_time = 1秒` との組み合わせで「1秒超えのクエリが5分で5回 = 明らかな異常」の水準。閾値は運用しながらベースラインに合わせて調整する（最初から完璧な閾値は誰にも分からない、が実務の作法）。
 
 ### 5. Performance Insights との関係：stg は無効「しかできない」、prod 想定では有効
 
@@ -174,14 +175,14 @@ AWS 公式の[推奨アラーム集（Best Practice Recommended Alarms）](https
 
 - **RDS のログエクスポート自体は無料**。かかるのは CloudWatch Logs の取り込み（Vended Logs 標準で $0.50/GB〜、[料金](https://aws.amazon.com/cloudwatch/pricing/)）と保存
 - 保存コストの最大の対策が **retention 設定**（本設計の30日）。無期限放置が最も高くつく
-- `general` ログを常時 ON にしない・`long_query_time` を下げすぎないことも取り込み量の抑制になる
+- `general` ログを常時 ON にしない・`log_slow_query_time` を下げすぎないことも取り込み量の抑制になる
 - SNS（email）・メトリクスフィルタは実質無料圏。アラームは1本 $0.10/月程度
 
 ---
 
 ## この設計で作る Terraform リソース（実装時のチェックリスト)
 
-- `aws_db_parameter_group`（mariadb11.4 ファミリー: `slow_query_log` / `long_query_time` / `log_output`）+ `rds.tf` の `parameter_group_name` 参照
+- `aws_db_parameter_group`（mariadb11.4 ファミリー: `log_slow_query` / `log_slow_query_time` / `log_output`。旧名称は不可）+ `rds.tf` の `parameter_group_name` 参照
 - 事前作業: 残存している孤児ロググループ `/aws/rds/instance/<identifier>/error` を手動削除（`aws logs delete-log-group`）
 - `aws_cloudwatch_log_group` ×2（error / slowquery、retention 30日）+ `aws_db_instance` に `depends_on` で両ロググループを指定（destroy 順序の保証）
 - `stg/terraform.tfvars`: `enabled_cloudwatch_logs_exports = ["error", "slowquery"]` に変更、PI 非対応制約のコメント追記

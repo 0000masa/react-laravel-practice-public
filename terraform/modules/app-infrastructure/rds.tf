@@ -53,22 +53,25 @@ resource "aws_db_instance" "main" {
 }
 
 # カスタムパラメータグループ。
-# スロークエリログはデフォルトパラメータグループでは生成すらされない（slow_query_log=0）ため、
+# スロークエリログはデフォルトパラメータグループでは生成すらされない（log_slow_query=0）ため、
 # ログを CloudWatch へエクスポートする以前に、まず生成を有効化する必要がある。
+# 注意: MariaDB 10.11 でスロークエリ関連の変数が改名され、mariadb11.4 ファミリーは新名称のみ
+# 受け付ける（旧名称 slow_query_log / long_query_time を指定すると apply 時に
+# InvalidParameterValue: Could not find parameter で失敗する。MySQL 系の記事は旧名称が多いので注意）。
 resource "aws_db_parameter_group" "main" {
   name   = "${var.project_name}-db-params"
   family = "mariadb11.4" # engine_version と揃える
 
-  # スロークエリログの生成を有効化
+  # スロークエリログの生成を有効化（旧名称: slow_query_log）
   parameter {
-    name  = "slow_query_log"
+    name  = "log_slow_query"
     value = "1"
   }
 
   # スロークエリの閾値（秒）。MariaDB デフォルトは10秒だが、Webアプリで10秒は既に大事故なので
-  # 実務の定石どおり1秒に締める（AWS 公式の設定例も 1.0 秒）
+  # 実務の定石どおり1秒に締める（AWS 公式の設定例も 1.0 秒）（旧名称: long_query_time）
   parameter {
-    name  = "long_query_time"
+    name  = "log_slow_query_time"
     value = "1"
   }
 
