@@ -86,6 +86,9 @@ resource "aws_cloudwatch_metric_alarm" "ecs_running_less_than_desired" {
       period = 60
       stat   = "Minimum"
     }
+    # return_data = 複数の metric_query のうち「どの結果を閾値判定の対象にするか」のフラグ。
+    # アラームでは必ずちょうど1つだけ true にする（0個でも2個以上でもエラー）。
+    # このクエリは expression から id (m_running) で参照される計算材料なので false。
     return_data = false
   }
 
@@ -102,14 +105,220 @@ resource "aws_cloudwatch_metric_alarm" "ecs_running_less_than_desired" {
       period = 60
       stat   = "Minimum"
     }
+    # 上と同じく計算材料（expression から m_desired で参照）なので false
     return_data = false
   }
 
   # 不足していたら 1、そうでなければ 0
   metric_query {
-    id          = "e_shortage"
-    expression  = "IF(m_running < m_desired, 1, 0)"
-    label       = "running < desired"
+    id         = "e_shortage"
+    expression = "IF(m_running < m_desired, 1, 0)"
+    label      = "running < desired"
+    # この式の結果だけが threshold(1) と比較される = アラームの判定対象
     return_data = true
   }
+}
+
+# =====================================================================
+# RDS 検知層（ログ・メトリクス・イベントの3系統 → SNS rds_alerts に集約）
+# 設計: docs/monitoring/rds-log-monitoring.md / ADR 0012
+# =====================================================================
+
+# --- RDS ロググループ ---
+# RDS はログエクスポート時に /aws/rds/instance/<identifier>/<log-type> という名前の
+# ロググループが無ければ自動作成するが、その場合は保持期間「無期限」の Terraform 管理外
+# リソースになってしまう。同名で先に作っておくことで保持期間を管理下に置く
+# （RDS 側には作成順・破棄順を保証する depends_on を張っている。rds.tf 参照）。
+resource "aws_cloudwatch_log_group" "rds_error" {
+  name              = "/aws/rds/instance/${var.project_name}-db/error"
+  retention_in_days = 30
+}
+
+resource "aws_cloudwatch_log_group" "rds_slowquery" {
+  name              = "/aws/rds/instance/${var.project_name}-db/slowquery"
+  retention_in_days = 30
+}
+
+# --- メトリクスフィルタ ---
+# エラーログ: MariaDB の深刻度タグ [ERROR] の行だけカウントする。
+# [Warning] は起動時等にも出るノイズなので対象外。
+# パターンに [] を含むため引用符で囲んだ完全一致タームにしている。
+resource "aws_cloudwatch_log_metric_filter" "rds_error_log" {
+  name           = "${var.project_name}-rds-error-log"
+  log_group_name = aws_cloudwatch_log_group.rds_error.name
+  # CloudWatch に渡る実際のパターンは "[ERROR]"（外側の \" は HCL のエスケープ）。
+  # 意味:「文字列 [ERROR] をそのまま含む行にマッチ」。MariaDB のエラーログは
+  # 「2026-07-05 12:00:00 0 [ERROR] InnoDB: ...」のように深刻度タグを含むため、この行だけ数える。
+  # フィルタ構文では引用符なしの [...] は「スペース区切りのフィールド分解」という別機能の
+  # 構文になってしまうので、リテラルとして扱うには引用符で囲んだタームにする必要がある。
+  pattern = "\"[ERROR]\""
+
+  metric_transformation {
+    name      = "RdsErrorLogCount"
+    namespace = "${var.project_name}/RDS"
+    # value = パターンにマッチした1件につきメトリクスへ送る値。固定の "1" にすることで
+    # 「1件マッチ = 1」の件数カウントになる（アラーム側は Sum で合計して件数を判定する）。
+    # 固定値のほかに、ログから抽出した数値（例: JSON ログの $.duration）を送る使い方もある。
+    value = "1"
+  }
+}
+
+# スロークエリ: 1エントリは複数行（# Time: / # User@Host: / # Query_time: / SQL本文）に
+# またがるため、行数ではなくエントリごとに1回だけ出る「# Query_time:」をカウントする。
+resource "aws_cloudwatch_log_metric_filter" "rds_slowquery_log" {
+  name           = "${var.project_name}-rds-slowquery-log"
+  log_group_name = aws_cloudwatch_log_group.rds_slowquery.name
+  # 実際のパターンは "# Query_time:"。意味:「この文字列をそのまま含む行にマッチ」。
+  # スロークエリの1エントリに1回だけ現れるヘッダ行（# Query_time: 2.000000 Lock_time: ...）を
+  # 数える。# とスペースを含むリテラルなので、上と同じく引用符で囲んだタームにしている。
+  pattern = "\"# Query_time:\""
+
+  metric_transformation {
+    name      = "RdsSlowQueryCount"
+    namespace = "${var.project_name}/RDS"
+    # 上と同じく「1件マッチ = 1」の件数カウント
+    value = "1"
+  }
+}
+
+# --- ログ由来のアラーム ---
+# エラーログは「5分間に1件以上」で即通知（エラーは1件でも異常）
+resource "aws_cloudwatch_metric_alarm" "rds_error_log" {
+  alarm_name        = "${var.project_name}-rds-error-log"
+  alarm_description = "RDS error log contains [ERROR] entries"
+
+  namespace   = "${var.project_name}/RDS"
+  metric_name = "RdsErrorLogCount"
+  statistic   = "Sum"
+  period      = 300
+
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = 1
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+
+  # メトリクスフィルタはマッチが無いとデータ自体を出さないので、データ無し = 正常として扱う
+  treat_missing_data = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.rds_alerts.arn]
+  ok_actions    = [aws_sns_topic.rds_alerts.arn]
+}
+
+# スロークエリは1件ごとの通知はアラート疲れを起こすため、「5分間に5件以上」の急増だけ拾う。
+# 深掘り（どのSQLが遅いか）は通知後に Logs Insights で行う（stg は PI 非対応のため）。
+resource "aws_cloudwatch_metric_alarm" "rds_slowquery_surge" {
+  alarm_name        = "${var.project_name}-rds-slowquery-surge"
+  alarm_description = "RDS slow query count surged (>= 5 in 5 minutes)"
+
+  namespace   = "${var.project_name}/RDS"
+  metric_name = "RdsSlowQueryCount"
+  statistic   = "Sum"
+  period      = 300
+
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = 5
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+
+  treat_missing_data = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.rds_alerts.arn]
+  ok_actions    = [aws_sns_topic.rds_alerts.arn]
+}
+
+# --- メトリクスアラーム定番4本 ---
+# 閾値は AWS 公式推奨（Best Practice Recommended Alarms）ベース。インスタンスクラス依存の
+# 値を含むため rds_config.alarm_thresholds として環境ごとの tfvars から渡す。
+# 評価は公式推奨どおり「60秒×5データポイント連続」（一過性のスパイクで鳴らさない）。
+resource "aws_cloudwatch_metric_alarm" "rds_cpu_high" {
+  alarm_name        = "${var.project_name}-rds-cpu-high"
+  alarm_description = "RDS CPUUtilization is too high (burst credit exhaustion / runaway query)"
+
+  namespace   = "AWS/RDS"
+  metric_name = "CPUUtilization"
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.main.identifier
+  }
+  statistic = "Average"
+  period    = 60
+
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = var.rds_config.alarm_thresholds.cpu_utilization_percent
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+
+  treat_missing_data = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.rds_alerts.arn]
+  ok_actions    = [aws_sns_topic.rds_alerts.arn]
+}
+
+# ストレージ枯渇は DB 停止に直結するため、悪化方向に安全側の Minimum で評価する
+resource "aws_cloudwatch_metric_alarm" "rds_free_storage_low" {
+  alarm_name        = "${var.project_name}-rds-free-storage-low"
+  alarm_description = "RDS FreeStorageSpace is running low (risk of DB stopping)"
+
+  namespace   = "AWS/RDS"
+  metric_name = "FreeStorageSpace"
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.main.identifier
+  }
+  statistic = "Minimum"
+  period    = 60
+
+  comparison_operator = "LessThanThreshold"
+  threshold           = var.rds_config.alarm_thresholds.free_storage_space_bytes
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+
+  treat_missing_data = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.rds_alerts.arn]
+  ok_actions    = [aws_sns_topic.rds_alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_freeable_memory_low" {
+  alarm_name        = "${var.project_name}-rds-freeable-memory-low"
+  alarm_description = "RDS FreeableMemory is running low (swap / OOM precursor)"
+
+  namespace   = "AWS/RDS"
+  metric_name = "FreeableMemory"
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.main.identifier
+  }
+  statistic = "Average"
+  period    = 60
+
+  comparison_operator = "LessThanThreshold"
+  threshold           = var.rds_config.alarm_thresholds.freeable_memory_bytes
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+
+  treat_missing_data = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.rds_alerts.arn]
+  ok_actions    = [aws_sns_topic.rds_alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_connections_high" {
+  alarm_name        = "${var.project_name}-rds-connections-high"
+  alarm_description = "RDS DatabaseConnections near max_connections (connection leak / pool exhaustion)"
+
+  namespace   = "AWS/RDS"
+  metric_name = "DatabaseConnections"
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.main.identifier
+  }
+  statistic = "Average"
+  period    = 60
+
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = var.rds_config.alarm_thresholds.database_connections
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+
+  treat_missing_data = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.rds_alerts.arn]
+  ok_actions    = [aws_sns_topic.rds_alerts.arn]
 }

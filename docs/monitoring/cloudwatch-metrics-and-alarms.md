@@ -86,7 +86,8 @@ CloudWatch のメトリクス（時系列）は、次の3つの組み合わせ�
 | --- | --- | --- |
 | `period` | メトリクスを何秒ごとの区間に集計するか | RDS メトリクスアラームは 60、ログ由来は 300 |
 | `statistic` | 各区間を1つの数値に潰す方法（Average / Sum / Minimum / Maximum 等） | 件数は `Sum`、使用率は `Average`、FreeStorageSpace のみ `Minimum`（枯渇方向に安全側で評価） |
-| `comparison_operator` + `threshold` | その数値と閾値の比較方法 | `GreaterThanThreshold` + 90 など |
+| `comparison_operator` | 区間の数値と閾値をどう比較するか（`GreaterThanThreshold` / `LessThanThreshold` / `GreaterThanOrEqualToThreshold` 等） | 使用率・件数系は超過判定、FreeStorageSpace / FreeableMemory は `LessThanThreshold`（下回ったら異常） |
+| `threshold` | 比較の基準となる閾値 | CPU は 90、エラーログ件数は 1、スロークエリ件数は 5。RDS メトリクス4本はインスタンスクラス依存のため tfvars 変数（`rds_config.alarm_thresholds`） |
 | `evaluation_periods` | 直近何区間を見るか（N） | RDS メトリクスアラームは 5 |
 | `datapoints_to_alarm` | N 区間中いくつ閾値超過でアラームにするか（M of N） | 5 of 5 =「60秒×5回連続で超過」。一過性のスパイクで鳴らさないための構成。ログ由来は 1 of 1（1区間で即） |
 | `treat_missing_data` | データが無い区間の扱い | 全アラームで `notBreaching`（データ無し = 正常）。メトリクスフィルタ産メトリクスはマッチ0件でデータ自体が無いため、これが実質必須 |

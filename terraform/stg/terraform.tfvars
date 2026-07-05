@@ -20,12 +20,34 @@ app_env                  = "staging"
 rds_config = {
   instance_class                  = "db.t4g.micro"
   skip_final_snapshot             = true
-  enabled_cloudwatch_logs_exports = ["error"]
+  enabled_cloudwatch_logs_exports = ["error", "slowquery"]
   multi_az                        = false
   backup_retention_period         = 0
-  performance_insights_enabled    = false
-  monitoring_interval             = 0
-  apply_immediately               = true
+  # Performance Insights は db.t2/t3/t4g の micro・small では非対応で、true にすると
+  # apply が InvalidParameterCombination で失敗する（= この false は選択ではなく制約）。
+  # prod 想定では db.t4g.medium 以上 + true（7日保持は無料）。判断の経緯: docs/adr/0012
+  performance_insights_enabled = false
+
+  # Enhanced Monitoring（拡張モニタリング）の収集間隔（秒）。0で無効、有効時は 1/5/10/15/30/60。
+  # 通常の CloudWatch メトリクスがハイパーバイザー由来の1分粒度なのに対し、こちらは OS 内の
+  # エージェントからプロセスごとの CPU/メモリ等を CloudWatch Logs へ送る（取り込み課金）。
+  # 60秒間隔なら取込 0.27GB/月/インスタンスで CloudWatch Logs 無料枠（5GB/月）内 = 実質無料のため
+  # stg でも有効化（CPU 等のアラーム通知後にプロセス単位で原因を特定する分析層の道具）。
+  # 1〜15秒への細粒度化は取込量が跳ねる（1秒 = 16GB/月）ので障害調査時のみ一時的に。
+  # 詳細: docs/monitoring/rds-observability-tools.md
+  monitoring_interval = 60
+
+  apply_immediately = true
+
+  # 検知層のメトリクスアラーム閾値。AWS 公式推奨を db.t4g.micro（RAM 1GB / ストレージ 20GB）に
+  # 当てはめた値。max_connections はメモリ連動（{DBInstanceClassMemory/12582880} ≈ 80）のため、
+  # インスタンスクラスを変えるときはここも見直す。設計: docs/monitoring/rds-log-monitoring.md
+  alarm_thresholds = {
+    cpu_utilization_percent  = 90
+    free_storage_space_bytes = 2147483648 # 割当20GBの10% = 2GiB
+    freeable_memory_bytes    = 268435456  # RAM 1GBの25% = 256MiB
+    database_connections     = 72         # max_connections(約80)の90%
+  }
 }
 
 ecs_web_service_config = {

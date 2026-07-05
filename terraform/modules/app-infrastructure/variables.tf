@@ -111,6 +111,9 @@ variable "rds_config" {
     - performance_insights_enabled: Performance Insightsを有効にするか（直近7日間は無料）
     - monitoring_interval: Enhanced Monitoringの収集間隔（秒）。0で無効、有効時は1/5/10/15/30/60
     - apply_immediately: 設定変更を即時反映するか（prodはfalse推奨）
+    - alarm_thresholds: 検知層のメトリクスアラーム閾値。インスタンスクラス依存の値
+      （FreeStorageSpace/FreeableMemory/DatabaseConnections）を含むため環境ごとに渡す。
+      設計: docs/monitoring/rds-log-monitoring.md
   EOT
   type = object({
     instance_class                  = string
@@ -121,6 +124,12 @@ variable "rds_config" {
     performance_insights_enabled    = bool
     monitoring_interval             = number
     apply_immediately               = bool
+    alarm_thresholds = object({
+      cpu_utilization_percent  = number # CPUUtilization がこの%を超えたら（公式推奨: 90）
+      free_storage_space_bytes = number # FreeStorageSpace がこのバイト数を下回ったら（公式推奨: 割当の10%）
+      freeable_memory_bytes    = number # FreeableMemory がこのバイト数を下回ったら（公式推奨: 総メモリの25%）
+      database_connections     = number # DatabaseConnections がこの数を超えたら（公式推奨: max_connections の90%）
+    })
   })
 }
 

@@ -105,6 +105,12 @@ variable "rds_config" {
     performance_insights_enabled    = bool
     monitoring_interval             = number
     apply_immediately               = bool
+    alarm_thresholds = object({
+      cpu_utilization_percent  = number
+      free_storage_space_bytes = number
+      freeable_memory_bytes    = number
+      database_connections     = number
+    })
   })
 }
 
