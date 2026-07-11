@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import QrCodePage from './pages/QrCodePage';
 import MailPage from './pages/MailPage';
+import PostBenchPage from './pages/PostBenchPage';
 import Callback from './pages/Callback';
 
 // 認証が必要なルートを保護するコンポーネント
@@ -54,6 +55,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <MailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/posts"
+            element={
+              <ProtectedRoute>
+                <PostBenchPage />
               </ProtectedRoute>
             }
           />

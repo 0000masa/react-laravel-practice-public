@@ -37,6 +37,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 <NavLink to="/mail" className={navLinkClass}>
                   メール送信
                 </NavLink>
+                <NavLink to="/posts" className={navLinkClass}>
+                  DB検証
+                </NavLink>
               </div>
             </div>
             <div className="flex items-center space-x-4">
