@@ -132,6 +132,8 @@ $table->index(['user_id', 'created_at']);
 
 ## 7. 効いているかの確認方法：EXPLAIN
 
+> 各列・各値の詳しい読み方と、検証5パターンごとの読み解きは [reading-explain.md](./reading-explain.md) に独立してまとめてある。ここは要点のみ。
+
 index を張る/張らないの判断は、必ず `EXPLAIN` で実際の実行計画を見て決める（勘で張らない）。
 
 ```sql
