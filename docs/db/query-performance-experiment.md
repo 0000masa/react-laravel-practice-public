@@ -44,7 +44,8 @@ posts
 - `user_id` は本物のFK。`posts` を投入する前に users を 1,000 人用意する。
 - `category_id` は10件マスタへのFK。1カテゴリ約10万件（100万件時）＝**低選択性**。
 - `title` にあえてindexを張り、「indexがあるのに中間一致LIKEでは使われない」を見せる。
-- データ生成は **Faker**（実務同様バラつかせる）。100万件は必ず**チャンク生成→バルクINSERT**でメモリ一定に。`title` の一部に既知語 `NEEDLE` を仕込むと `LIKE '%NEEDLE%'` のヒット件数を制御できる。
+- データ生成は **Faker を使わず単語プールからの自前生成**。理由: seed を叩く runner イメージは `composer install --no-dev`（`docker/ecr/backend/Dockerfile`）で **Faker（`require-dev`）が入っていない**ため、`fake()`/`factory()` を使うと `Call to undefined function fake()` で落ちる。users も `factory()` ではなくバルク INSERT で作る。
+- 100万件は必ず**チャンク生成→バルクINSERT**でメモリ一定に。`title` の一部に既知語 `NEEDLE` を仕込むと `LIKE '%NEEDLE%'` のヒット件数を制御できる。
 
 ---
 

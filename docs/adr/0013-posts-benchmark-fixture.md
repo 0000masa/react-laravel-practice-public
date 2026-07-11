@@ -28,7 +28,7 @@ status: accepted
 
 - **既存 `qr_codes` にダミー投入**。却下理由: 画像なし行の混入、LIKE 向きの列の欠如、本物データの汚染。
 - **検証 API を認証なしにする**。却下理由: 「認証ありの API を curl で叩く」実務に寄せたいため `auth:web` 配下に置いた。中身は偽データの読み取り専用なので露出リスクは低いが、prod には出さず stg 限定で使う。
-- **title/body を軽量な自前生成にする**（速い）。実務の投稿は多様なので realistic を優先し Faker を採用。代償として 100万件投入は数分〜十数分かかる（チャンク生成でメモリは一定に抑える）。
+- **title/body を Faker で realistic に生成する**。当初は実務の多様性を優先して Faker を採用したが、seed を叩く runner イメージは `composer install --no-dev` でビルドされ **Faker（`require-dev`）が無い**ため `Call to undefined function fake()` で落ちた。**runner で動くコマンドが dev 専用依存を持つのは設計として誤り**と判断し、単語プールからの自前生成に変更（users も `factory()` をやめてバルク INSERT）。文章の自然さは測定対象のDB性能に影響しないため許容。
 
 ## トレードオフ / 影響
 

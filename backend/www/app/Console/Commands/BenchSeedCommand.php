@@ -7,6 +7,7 @@ use App\Models\User;
 use Database\Seeders\CategorySeeder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * DB性能学習用の posts 投入コマンド（追加式）。
@@ -18,6 +19,10 @@ use Illuminate\Support\Facades\DB;
  *
  * GitHub Actions からは db-task.yml の command_type=shell で:
  *   shell_command = php artisan bench:seed --count=1000000
+ *
+ * 【重要】このコマンドは stg/prod の runner（composer install --no-dev で
+ * ビルドされ Faker が無い）でも動く必要があるため、fake()/factory() は使わず、
+ * 単語プールからの自前生成 + バルク INSERT で完結させている。
  */
 class BenchSeedCommand extends Command
 {
@@ -35,6 +40,17 @@ class BenchSeedCommand extends Command
 
     /** LIKE '%NEEDLE%' のヒットを仕込む割合（約 1/10000 行） */
     private const NEEDLE_RATE = 10000;
+
+    /** title / body を自前生成するための単語プール（Faker 非依存） */
+    private const WORDS = [
+        'lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing', 'elit',
+        'sed', 'eiusmod', 'tempor', 'incididunt', 'labore', 'magna', 'aliqua', 'enim',
+        'minim', 'veniam', 'quis', 'nostrud', 'exercitation', 'ullamco', 'laboris',
+        'nisi', 'aliquip', 'commodo', 'consequat', 'duis', 'aute', 'irure', 'voluptate',
+        'velit', 'esse', 'cillum', 'fugiat', 'nulla', 'pariatur', 'excepteur', 'sint',
+        'occaecat', 'cupidatat', 'proident', 'sunt', 'culpa', 'officia', 'deserunt',
+        'mollit', 'anim', 'laborum', 'perspiciatis', 'unde', 'omnis', 'natus', 'error',
+    ];
 
     public function handle(): int
     {
@@ -59,7 +75,6 @@ class BenchSeedCommand extends Command
         $userIds = User::pluck('id')->all();
         $categoryIds = Category::pluck('id')->all();
         $now = now();
-        $faker = fake();
 
         $this->info("posts に {$count} 件を追加します（チャンク " . self::CHUNK_SIZE . " 件ずつ）...");
         $remaining = $count;
@@ -70,8 +85,8 @@ class BenchSeedCommand extends Command
             $rows = [];
 
             for ($i = 0; $i < $batch; $i++) {
-                // title は Faker でバラつかせる（実務の投稿に近い多様性）
-                $title = $faker->sentence(6);
+                // title は単語プールからランダムに組み立ててバラつかせる
+                $title = $this->randomPhrase(4, 8);
                 // 一部の行にだけ既知語 NEEDLE を混ぜ、LIKE のヒット件数を制御可能にする
                 if (random_int(1, self::NEEDLE_RATE) === 1) {
                     $title .= ' NEEDLE';
@@ -81,7 +96,7 @@ class BenchSeedCommand extends Command
                     'user_id' => $userIds[array_rand($userIds)],
                     'category_id' => $categoryIds[array_rand($categoryIds)],
                     'title' => $title,
-                    'body' => $faker->paragraph(3),
+                    'body' => $this->randomPhrase(20, 40),
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
@@ -105,8 +120,23 @@ class BenchSeedCommand extends Command
     }
 
     /**
-     * users を目標人数まで用意する（不足分だけ factory で作成）。
+     * 単語プールから min〜max 語をつないだ文字列を作る（先頭大文字）。
+     */
+    private function randomPhrase(int $min, int $max): string
+    {
+        $n = random_int($min, $max);
+        $words = [];
+        for ($i = 0; $i < $n; $i++) {
+            $words[] = self::WORDS[array_rand(self::WORDS)];
+        }
+
+        return ucfirst(implode(' ', $words));
+    }
+
+    /**
+     * users を目標人数まで用意する（不足分だけバルク INSERT で作成）。
      * user_id を 1,000 人に分散させることで WHERE user_id=? が高選択性になる。
+     * factory()/fake() は Faker 依存で runner に無いため使わない。
      */
     private function ensureUsers(): void
     {
@@ -117,8 +147,33 @@ class BenchSeedCommand extends Command
 
         $toCreate = self::TARGET_USERS - $current;
         $this->info("users を {$toCreate} 人作成します（目標 " . self::TARGET_USERS . " 人）...");
-        // UserFactory はパスワードハッシュを static でメモ化するため 1,000 件でも高速
-        User::factory()->count($toCreate)->create();
+
+        // 既存 email と衝突しないよう、現在の最大 id を基準に連番で振る
+        $base = (int) (User::max('id') ?? 0);
+        // パスワードハッシュは 1 回だけ計算して使い回す（bcrypt を毎回叩かない）
+        $password = Hash::make('password');
+        $now = now();
+
+        $rows = [];
+        for ($i = 1; $i <= $toCreate; $i++) {
+            $seq = $base + $i;
+            $rows[] = [
+                'name' => "Bench User {$seq}",
+                'email' => "bench_user_{$seq}@example.test",
+                'email_verified_at' => $now,
+                'password' => $password,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+
+            if (count($rows) >= self::CHUNK_SIZE) {
+                DB::table('users')->insert($rows);
+                $rows = [];
+            }
+        }
+        if ($rows !== []) {
+            DB::table('users')->insert($rows);
+        }
     }
 
     /**
