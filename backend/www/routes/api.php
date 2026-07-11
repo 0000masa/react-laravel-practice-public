@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\Auth\PasswordAuthController;
+use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\MailController;
+use App\Http\Controllers\PostController;
 use App\Http\Controllers\QrCodeController;
 use App\Http\Controllers\QrCodeQueueController;
 use App\Http\Controllers\UserController;
@@ -42,6 +44,10 @@ Route::middleware('auth:web')->group(function () {
 
     // メール送信のルート
     Route::post('/mail/send', [MailController::class, 'send']);
+
+    // DB性能学習用（posts / categories）。詳細は docs/db/query-performance-experiment.md
+    Route::get('/posts', [PostController::class, 'index']);
+    Route::get('/categories', [CategoryController::class, 'index']);
 });
 
 //ヘルスチェック用のルート

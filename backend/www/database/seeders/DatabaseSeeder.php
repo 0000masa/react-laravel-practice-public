@@ -27,5 +27,8 @@ class DatabaseSeeder extends Seeder
                 'email_verified_at' => now(),
             ]
         );
+
+        // DB性能学習用の区分マスタ（冪等）
+        $this->call(CategorySeeder::class);
     }
 }
