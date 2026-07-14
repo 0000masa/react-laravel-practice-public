@@ -82,6 +82,21 @@ graph LR
 | メトリクス | リクエスト数・エラー数・レイテンシを CloudWatch に自動送信 |
 | タイムアウト | アイドル / リクエスト単位のタイムアウトをサービス側で設定可能 |
 
+### そもそも Envoy とは
+
+Envoy は Lyft が開発し 2016 年に公開したオープンソースの **L4 / L7 プロキシ**（C++ 製、CNCF 卒業プロジェクト）。カテゴリとしては nginx や HAProxy と同じ「リバースプロキシ」だが、サービスメッシュのサイドカーとして標準採用されるのは次の違いによる。
+
+| | nginx / HAProxy（従来型） | Envoy |
+| --- | --- | --- |
+| 設定の反映 | 設定ファイルを書き換えて reload | **xDS API** でコントロールプレーンから動的に流し込み。無停止・リアルタイムに反映 |
+| 設計の前提 | 人が設定を書く | **プログラム（コントロールプレーン）が設定を書く** |
+| 組み込み機能 | プロキシ・負荷分散が中心 | リトライ・タイムアウト・サーキットブレーカー・アウトライア検出・詳細メトリクス・分散トレーシングまで標準装備 |
+| プロトコル | HTTP/1.1 中心（HTTP/2 対応はあるが後付け） | HTTP/2・gRPC をネイティブに扱う |
+
+§2 で「ECS が宛先タスク一覧を継続的に配信できる」のは、まさにこの xDS の仕組みで Envoy が無停止の設定更新を受けられるから。Service Connect のほか、App Mesh・Istio・Consul など主要なサービスメッシュがすべて Envoy をデータプレーンに採用している（§5 参照）。
+
+- 公式: [Envoy Proxy](https://www.envoyproxy.io/)
+
 ### コスト
 
 Service Connect 自体に追加料金はない。ただしプロキシコンテナがタスクの CPU / メモリを消費するため、タスクサイズに余裕を持たせる必要がある（目安として最低 256 CPU ユニット・64 MiB がプロキシ用に必要）。
@@ -230,9 +245,42 @@ ECS には Cloud Map を使う統合が 2 つあり、名前が紛らわしい�
 | Service Connect | `/etc/hosts` + Envoy | Envoy が接続単位で実施 | ECS サービス間の同期通信の第一候補 | プロキシ分の CPU / メモリ |
 | 非同期（SQS / SNS / EventBridge） | 不要（キュー / トピックの URL） | コンシューマ側のスケールで調整 | 即時応答が不要な処理。呼び出し側と受け側を時間的に分離できる | キューのリクエスト料金 |
 
-### 参考: 選ばない・特殊用途の選択肢
+### 参考: サービスメッシュ（App Mesh / Istio）との関係
 
-- **App Mesh**: Envoy を使うサービスメッシュだが、**2026 年 9 月 30 日でサービス終了**。AWS は Service Connect への移行を案内している。新規採用はしない。([移行ガイド](https://aws.amazon.com/blogs/containers/migrating-from-aws-app-mesh-to-amazon-ecs-service-connect/))
+Service Connect の「各タスクに Envoy サイドカーを置き、コントロールプレーンが全プロキシに設定を配る」という構図は、**サービスメッシュ**と呼ばれる設計そのもの。同じ構図の製品と並べると、違いは「Envoy とその設定を誰がどれだけ管理するか」に集約される。
+
+| | データプレーン（通信を運ぶ層） | コントロールプレーン（設定を配る層） | 動く場所 |
+| --- | --- | --- | --- |
+| Service Connect | Envoy（ECS が自動注入） | ECS のコントロールプレーン（AWS 管理・利用者からは不可視） | ECS のみ |
+| App Mesh | Envoy（自分でタスク定義に追加） | App Mesh（AWS 管理のマネージドサービス） | ECS / EKS / EC2 |
+| Istio | Envoy（Istio が Pod に自動注入） | istiod（**自分のクラスタ内で自分が運用**） | Kubernetes（EKS 含む） |
+
+機能の多さと運用負荷はどちらも「Istio > App Mesh > Service Connect」の順になる。
+
+#### App Mesh との違い
+
+**2026 年 9 月 30 日でサービス終了**のため新規採用はしない。ただし Service Connect の設計を理解する材料として違いを整理しておく。
+
+| | App Mesh | Service Connect |
+| --- | --- | --- |
+| 位置づけ | 独立したサービスメッシュ製品 | ECS の一機能 |
+| 定義するリソース | メッシュ・仮想サービス・仮想ノード・仮想ルーター・ルート・仮想ゲートウェイを自分で設計・管理（サービス 1 つにつき複数リソース） | `service_connect_configuration` ブロック 1 つ（§6） |
+| Envoy の配置 | 自分でタスク定義に Envoy コンテナと `proxyConfiguration`（iptables でトラフィックを Envoy に曲げる設定）を書く。Envoy のバージョンアップも自分の責任 | ECS が自動注入・自動更新。タスク定義には現れない |
+| トラフィック制御 | 重み付きルーティング（カナリアリリース）・パス / ヘッダーベースルーティング・mTLS など細かく制御可能 | ラウンドロビン + リトライ（2 回固定）+ アウトライア検出 + タイムアウト + TLS。カナリアやヘッダールーティングは**できない** |
+
+App Mesh は「Istio 相当をマネージドで」という位置づけで、細かい制御と引き換えに設定量と運用負荷が大きかった。実際に多くの利用者が使うのは「名前で呼べる・負荷分散・リトライ・メトリクス」という基本機能だけで、そこを設定数行に圧縮して ECS に組み込んだのが Service Connect（2022 年リリース）。AWS は ECS ワークロードには Service Connect への移行を案内しており、カナリアのような高度なルーティングが必要な場合の移行先は VPC Lattice や（EKS なら）Istio になる。([移行ガイド](https://aws.amazon.com/blogs/containers/migrating-from-aws-app-mesh-to-amazon-ecs-service-connect/))
+
+#### Istio とは
+
+Kubernetes 上で動かすオープンソースのサービスメッシュ。2017 年に Google・IBM・Lyft が開発を開始し、現在は CNCF（Kubernetes と同じ財団）の卒業プロジェクトで、サービスメッシュのデファクトスタンダード。
+
+- 設定は `VirtualService`（ルーティング規則）・`DestinationRule`（負荷分散・サーキットブレーカー）・`Gateway`（外部からの入口）などの Kubernetes CRD を YAML で書く。App Mesh の仮想サービス・仮想ルーターはこのモデルに似せて作られていた
+- 機能は 3 系統でフル装備: トラフィック制御（カナリア・ヘッダールーティング・フォールトインジェクション・ミラーリング）、セキュリティ（mTLS 自動化・サービス間の認可ポリシー）、可観測性（全通信のメトリクス・分散トレーシング・トポロジー可視化）
+- 代償は運用負荷。マネージドサービスではなく、istiod のバージョンアップ・Envoy との互換性管理・CRD 設計をすべて自分で担う
+- 公式: [What is Istio?](https://istio.io/latest/docs/overview/what-is-istio/)
+
+### 参考: VPC Lattice
+
 - **VPC Lattice**: VPC・アカウントをまたいでサービス網を組むためのサービス。単一 VPC 内の ECS サービス間なら Service Connect で足りる。([公式](https://docs.aws.amazon.com/vpc-lattice/latest/ug/what-is-vpc-lattice.html))
 
 ### 同期 vs 非同期という軸
