@@ -40,9 +40,26 @@ ECS における「コンテナ間 / タスク間 / サービス間」の通信�
 
 `http://api:3000` のような名前は Route 53 の DNS レコードではない。仕組みは次の通り。
 
-1. Service Connect エージェントが、タスク内アプリコンテナの `/etc/hosts` にエイリアスを書き込む（例: `api → 127.255.0.2`。`127.255.0.0/16` のループバック範囲が使われる）
-2. アプリが `http://api:3000` に接続すると、その接続は**自タスク内の Envoy プロキシ**が受ける
-3. Envoy が Cloud Map 名前空間（§4）から取得した最新の宛先タスク一覧をもとに、健全なタスクの ENI へ転送する
+1. **タスク起動時**、Service Connect エージェントがタスク内アプリコンテナの `/etc/hosts` にエイリアスを書き込む。エントリは**エンドポイント名ごとに 1 行**作られ、名前ごとに別のアドレスが割り当てられる（例: `api → 127.255.0.2`、`report → 127.255.0.3`。`127.255.0.0/16` のループバック範囲）。書かれるのは**そのサービスのデプロイメント作成時点で名前空間に存在していたエンドポイント名だけ**。存在しない名前は `/etc/hosts` にも VPC の DNS にもないため、プロキシに届く前に NXDOMAIN で名前解決自体が失敗する
+2. アプリが `http://api:3000` に接続するとき、Linux の名前解決は `/etc/hosts` を DNS より先に評価する（`nsswitch.conf` の `hosts: files dns`）ため、**DNS クエリは発生せず**、接続は**自タスク内の Envoy プロキシ**が受ける
+3. Envoy は ECS から配信された宛先タスク一覧をもとに、健全なタスクの ENI へ転送する。この宛先一覧は **ECS のコントロールプレーンが Cloud Map の登録情報を管理し、各タスク内の Service Connect エージェント経由で Envoy に配信**している（タスク側が Cloud Map API を直接呼ぶのではない。だからタスクロールに Cloud Map の権限は不要）
+
+### 何が・いつ同期されるか
+
+同期されるものは 2 種類あり、タイミングが違う。
+
+| 同期されるもの | いつ | 帰結 |
+| --- | --- | --- |
+| **エンドポイント名の集合**（`/etc/hosts` のエントリ） | **デプロイメント作成時点のスナップショットで固定**（各タスクは起動時にそれを書き込まれる） | 名前空間に**後から追加されたエンドポイント名は既存デプロイメントのタスクから見えない**。スケールアウトで後から増えたタスクも最新デプロイメントのスナップショットを引き継ぐため、クライアント側サービスの**再デプロイ**で初めて解決できる |
+| **既知の名前**の背後の宛先タスク IP 一覧（Envoy のルーティング設定） | **継続的に更新** | 既存エンドポイント名のままなら、スケールアウト・ローリング更新・タスク入れ替えによる IP の増減は既存タスクにも自動反映される |
+
+公式ドキュメントの記載（[Service Connect components](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/service-connect-concepts-deploy.html)）:
+
+> You must redeploy existing services before the applications can resolve new endpoints. New endpoints that are added to the namespace after the most recent deployment won't be added to the task configuration.
+
+> Existing tasks and replacement tasks continue to behave the same as they did after the most recent deployment.
+
+運用上は「呼ばれる側（B）を先にデプロイし、その後に呼ぶ側（A）をデプロイする」順序になる。逆順だと A のタスクは B のエンドポイント名を知らないまま起動する。ただし順序が効くのは**エンドポイント名を新規追加するとき**（B を初めて Service Connect 化するときを含む）だけで、既に名前空間に存在する名前のまま B のタスクが入れ替わる・増減する分には、上の表の 2 行目の通り既存の A タスクにも自動反映される。
 
 ```mermaid
 graph LR
@@ -131,10 +148,62 @@ graph LR
 
 - 公式: [AWS Cloud Map とは](https://docs.aws.amazon.com/cloud-map/latest/dg/what-is-cloud-map.html)
 
+### Cloud Map の名前空間は 3 種類ある
+
+「Cloud Map = 内部的には Route 53 プライベートホストゾーン」という理解は**名前空間の種類による**。ホストゾーンが作られるのは DNS 名前空間だけで、Service Connect が使う HTTP 名前空間では Route 53 リソースは一切作られない。
+
+| | HTTP 名前空間 | プライベート DNS 名前空間 | パブリック DNS 名前空間 |
+| --- | --- | --- | --- |
+| 作られる Route 53 リソース | **なし** | プライベートホストゾーン（名前空間と同名。複数 VPC に関連付け可能） | パブリックホストゾーン（登録済みドメイン名が必要） |
+| 検索方法 | `DiscoverInstances` API のみ | API + **VPC 内からの DNS クエリ** | API + インターネットからの DNS クエリ |
+| DNS レコード | 作られない | `<サービス名>.<名前空間名>` 形式の A / SRV レコードがタスクの登録・削除に合わせて増減 | 同左（パブリック） |
+| 使う ECS 機能 | **Service Connect** | **サービスディスカバリ** | （ECS ではほぼ使わない。公開 API の直接公開向け） |
+| 料金 | 登録リソース $0.10/月・件 + `DiscoverInstances` $1.00/100万件 | 左に加えて、ホストゾーン $0.50/月 + DNS クエリ $0.40/100万件 | 同左 |
+
+- Terraform リソースも別: `aws_service_discovery_http_namespace` / `aws_service_discovery_private_dns_namespace` / `aws_service_discovery_public_dns_namespace`
+- ECS クラスタ作成時に名前空間を自動作成させた場合（`service_connect_defaults`）、作られるのは **HTTP 名前空間**。公式ドキュメントにも "Service Connect doesn't use or create DNS hosted zones in Amazon Route 53." と明記されている
+- どの名前空間でも「タスク起動・停止に合わせた登録・削除」というレジストリ機能は同じ。違いは**その登録情報を DNS としても公開するかどうか**
+- プライベート DNS 名前空間で、ホストゾーンに存在しない名前を引くと Route 53 Resolver は `NXDOMAIN` を返す（VPC 標準の名前解決にフォールバックしない）点は運用上の注意
+- 公式: [Cloud Map 名前空間の作成（3 種類の比較表）](https://docs.aws.amazon.com/cloud-map/latest/dg/creating-namespaces.html)、[Cloud Map 料金](https://aws.amazon.com/cloud-map/pricing/)
+
+### 保存先は 3 種類とも同じ。違いは「DNS への投影」の有無と公開範囲
+
+「宛先 → IP」の情報の保存先は 3 種類とも **Cloud Map 自身の内部レジストリ**で共通しており、Route 53 ではない。データモデルはどのタイプでも同じ 3 階層になっている。
+
+```
+名前空間 (internal)
+└── サービス (api)
+    └── インスタンス (タスクごとに 1 件)
+        ├── AWS_INSTANCE_IPV4 = 10.0.1.23
+        ├── AWS_INSTANCE_PORT = 3000
+        └── 任意のカスタム属性 (キー・バリュー)
+```
+
+`DiscoverInstances` API はどのタイプでもこのレジストリを直接読む。DNS 名前空間はこれに加えて、インスタンスの登録・削除のたびに**レジストリの内容を Route 53 ホストゾーンに DNS レコードとして自動同期（投影）する**。ホストゾーンは「レジストリから導出された公開用の写し」であり、マスターデータは常に Cloud Map 側にある。
+
+| | 保存先（レジストリ） | Route 53 への投影 | DNS で引ける範囲 |
+| --- | --- | --- | --- |
+| HTTP 名前空間 | Cloud Map | **しない** | なし（API のみ） |
+| プライベート DNS 名前空間 | Cloud Map（同じ） | プライベートホストゾーンに A / SRV レコードを自動作成・削除 | 関連付けた VPC 内のみ |
+| パブリック DNS 名前空間 | Cloud Map（同じ） | パブリックホストゾーンに同様 | インターネット全体 |
+
+この構造から 2 つの帰結が出る。
+
+1. **DNS 名前空間でも `DiscoverInstances` API は使える**（前の表で「API + DNS クエリ」となっていた理由。DNS は追加の公開経路にすぎない）
+2. **HTTP 名前空間には IP を持たない資源も登録できる**。レジストリはキー・バリューの集合なので、URL や ARN のような「DNS の A レコードでは表現できない属性」も保存・検索できる
+
+### Service Connect が HTTP 名前空間を使う理由
+
+Service Connect は名前空間を選べる（公式にも "The type of namespace doesn't affect Service Connect." とあり、DNS 名前空間を指定しても動作は同じ）。それでも ECS が名前空間を自動作成するときに HTTP 名前空間を選ぶのは、Service Connect にとって DNS への投影が**不要なだけでなく害になりうる**ため。
+
+1. **DNS を使う箇所がない**: 名前解決は `/etc/hosts`（§2）、宛先一覧の配信は ECS コントロールプレーンがレジストリを API で読んで行う。ホストゾーンを作っても参照されず、$0.50/月 と管理対象が無駄に増えるだけ
+2. **プロキシの迂回路を作らないため**: DNS レコードとして公開すると、名前空間内の他のワークロードが DNS でタスク IP を直接引いて接続できてしまう。その経路は Envoy を通らないため、負荷分散・リトライ・アウトライア検出・メトリクスがすべて効かない。HTTP 名前空間ならそもそも DNS で引けないので、「Service Connect の名前への通信は必ずプロキシを通る」が構造的に保証される
+3. **DNS の弱点を持ち込まないため**: Service Connect の目的自体が「DNS キャッシュ・TTL に依存する古い IP 問題」の解消（後述の比較表）なので、DNS 投影を持つ意味がない
+
 ECS には Cloud Map を使う統合が 2 つあり、名前が紛らわしいので注意する。
 
-1. **サービスディスカバリ（Service Discovery）**: Cloud Map の DNS 名前空間（Route 53 プライベートホストゾーン）にタスク IP を登録し、クライアントは通常の **DNS 解決**で宛先 IP を得て直接つなぐ。プロキシなし。
-2. **Service Connect**: Cloud Map の名前空間を**レジストリとして内部利用**するが、クライアントは DNS を引かない。Envoy プロキシが宛先一覧を Cloud Map から取得して転送する。
+1. **サービスディスカバリ（Service Discovery）**: Cloud Map の**プライベート DNS 名前空間**（Route 53 プライベートホストゾーンが作られる）にタスク IP を登録し、クライアントは通常の **DNS 解決**で宛先 IP を得て直接つなぐ。プロキシなし。
+2. **Service Connect**: Cloud Map の **HTTP 名前空間**を**レジストリとして内部利用**するが、クライアントは DNS を引かない（名前は `/etc/hosts` で解決され、DNS クエリ自体が発生しない。§2 参照）。宛先一覧は ECS のコントロールプレーンが Cloud Map の登録情報をもとに各タスクのプロキシへ配信する。
 
 | | サービスディスカバリ | Service Connect |
 | --- | --- | --- |
@@ -192,7 +261,7 @@ resource "aws_ecs_cluster" "main" {
 }
 ```
 
-DNS 名前空間ではなく **HTTP 名前空間**で良い点に注意。Service Connect は DNS を引かないため、Route 53 ホストゾーンが作られない安価な HTTP 名前空間で足りる。
+DNS 名前空間ではなく **HTTP 名前空間**で良い点に注意。Service Connect は DNS を引かないため、Route 53 ホストゾーンが作られない安価な HTTP 名前空間で足りる（3 種類の名前空間の違いは §4 参照）。
 
 ### (2) タスク定義: portMappings に「名前」を付ける
 
