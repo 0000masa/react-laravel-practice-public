@@ -31,6 +31,26 @@
 
 つまりブラウザの構図は「**公開された Collector に、CORS を越えて、ネットワーク経由で OTLP/HTTP を送る**」。サイドカーで localhost 完結できた backend とはここが決定的に違う。
 
+### 送信先の公開エンドポイントは何を指すか（誤解しやすい点）
+
+上表の例 `https://otel.example.com/v1/traces` は **OpenTelemetry 公式が提供するクラウド上の Collector ではない**。OpenTelemetry はベンダー中立の「仕様とツール」を提供するプロジェクトであり、テレメトリを預かる SaaS は運営していない。したがって送信先は自分で用意する必要があり、選択肢は次の 2 つ。
+
+| 選択肢 | 中身 | このリポジトリで例えると |
+| --- | --- | --- |
+| ① 自前ホストの Collector | 自分たちで Collector を立て、前段に公開エンドポイントを置く | **ALB + ECS Fargate で Collector を動かす**（例 `https://otel.example.com/...` はこれ） |
+| ② ベンダーの OTLP 受信エンドポイント | Grafana Cloud / Datadog / Honeycomb / New Relic 等が提供する OTLP 直受け URL に送る | そのベンダーの URL（例 `https://otlp-gateway-....grafana.net/otlp`）。自前 Collector を省ける構成もある |
+
+`https://otel.example.com/v1/traces` は **①（自前ホスト）** のイメージ。「自分たちが ALB + ECS などで用意したサーバーのエンドポイントに送る」で正しい。
+
+backend との対比:
+
+- backend（ECS サイドカー）: アプリ → `localhost:4318` の Collector → 保存先（X-Ray 等）へ Collector が転送。
+- browser（自前ホスト①）: ブラウザ → 公開エンドポイント（ALB）→ ECS 上の Collector → 保存先へ転送。
+
+「Collector が最終保存先ではなく中継役」という点は backend も browser も同じ。違うのは Collector への到達経路だけ（localhost か、インターネット越しの ALB か）。
+
+②で直送もできるのに①の自前 Collector を挟む利点: 送信先ベンダーを 1 か所で切替可能、PII のマスキングやサンプリングを集中管理できる、ブラウザに送信先の認証情報を持たせず Collector 側で付与できる。
+
 ---
 
 ## 1. 記事の主題と背景
