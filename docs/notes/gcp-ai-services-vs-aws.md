@@ -167,7 +167,7 @@ AI サービスを列挙するとき、分類の軸を決めないと比較が�
   - Nova Canvas（画像生成）、Nova Reel（動画生成）
 - **課金単位**: テキスト系はトークン数。画像・動画系は生成物の量
 - **公式ドキュメント**: https://aws.amazon.com/nova/
-- **注意**: **Nova Canvas と Nova Reel は終息予定。** 公式モデルカードに `Model EOL date: September 30, 2026`、`Model lifecycle: Legacy (certain regions)` と明記されている（https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-canvas.html ）。**この 2 つが EOL を迎えると、Bedrock の公式モデル一覧には「テキストから画像を生成するモデル」は Titan Image Generator G1 v2（旧世代）だけ、「動画を生成するモデル」は 1 つも残らない**（一覧: https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html ）。
+- **注意**: **Nova Canvas と Nova Reel は 2026 年 9 月 30 日で提供終了が決まっている。** 公式モデルカードに `Model EOL date: September 30, 2026`（EOL = End of Life、提供終了のこと）、`Model lifecycle: Legacy (certain regions)` と明記されている（https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-canvas.html ）。**この 2 つの提供が終わると、Bedrock の公式モデル一覧には「テキストから画像を生成するモデル」は Titan Image Generator G1 v2（旧世代）だけ、「動画を生成するモデル」は 1 つも残らない**（一覧: https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html ）。
 
 ### GCP ↔ AWS 対応表（L1）
 
@@ -175,23 +175,23 @@ AI サービスを列挙するとき、分類の軸を決めないと比較が�
 | --- | --- | --- | --- |
 | Gemini API（Agent Platform 経由） | Amazon Bedrock（Amazon Nova 呼び出し） | ◎ ほぼ同等 | どちらも「自社の企業向け基盤の上で、自社モデルを IAM 等と統合して呼ぶ」構図で一致する |
 | Model Garden | Amazon Bedrock（他社モデルカタログ全体） | ◎ ほぼ同等 | 複数社モデルを単一 API で束ねる思想は同じ。違いは階層で、GCP は Model Garden をエージェント基盤の一機能として位置づけ、AWS は Bedrock 自体がその役割を担う |
-| Imagen | Amazon Nova Canvas、Titan Image Generator G1 v2（生成）＋ Stability AI の 13 モデル（編集） | △ 粒度が違う | **品揃えの構造が違う。** GCP は自社の生成モデル Imagen が主力。AWS 側で「テキストから画像を新規生成する」モデルは自社の 2 つだけで、**Nova Canvas は 2026-09-30 EOL、Titan Image Generator G1 v2 は旧世代**。他社（Stability AI）が提供する 13 モデルはすべて**編集・変換系**（背景除去、インペイント、アップスケール、スタイル転送など）で、新規生成モデルは含まれない |
-| Veo | Amazon Nova Reel | △ 粒度が違う | **品揃えの厚みが違う。** GCP は Veo 2 / 3 / 3.1 と世代を重ねている。AWS は **Nova Reel 1 本のみで、それが 2026-09-30 に EOL**。公式のモデル一覧に他の動画生成モデルは掲載されておらず（TwelveLabs は動画の「理解」であって生成ではない）、**EOL 後は Bedrock 上の動画生成の選択肢が実質なくなる** |
+| Imagen | Amazon Nova Canvas、Titan Image Generator G1 v2（生成）＋ Stability AI の 13 モデル（編集） | △ 粒度が違う | **品揃えの構造が違う。** GCP は自社の生成モデル Imagen が主力。AWS 側で「テキストから画像を新規生成する」モデルは自社の 2 つだけで、**Nova Canvas は 2026-09-30 で提供終了、Titan Image Generator G1 v2 は旧世代**。他社（Stability AI）が提供する 13 モデルはすべて**編集・変換系**（背景除去、インペイント、アップスケール、スタイル転送など）で、新規生成モデルは含まれない |
+| Veo | Amazon Nova Reel | △ 粒度が違う | **品揃えの厚みが違う。** GCP は Veo 2 / 3 / 3.1 と世代を重ねている。AWS は **Nova Reel 1 本のみで、それが 2026-09-30 で提供終了**。公式のモデル一覧に他の動画生成モデルは掲載されておらず（TwelveLabs は動画の「理解」であって生成ではない）、**提供終了後は Bedrock 上の動画生成の選択肢が実質なくなる** |
 | Google AI Studio（API キーだけで使える軽量な入口） | 相当なし | ✕ 相当なし | Bedrock は AWS アカウント前提のマネージドサービスとして統一されており、「無料・APIキーのみ」の軽量な入口という概念がない |
 
 ### このレイヤーの設計思想の違い
 
 GCP は入口を分けている。**軽く始める入口（Google AI Studio）**と**統制の効く本番向けの入口（Gemini Enterprise Agent Platform）**を意図的に分離し、フェーズによって使い分けさせる。対して AWS は Bedrock という単一サービスの中に自社モデル（Nova）と他社モデルをフラットに並べ、入口を分けない設計で一貫している。
 
-もう一つの差は、**テキスト生成以外のモダリティ（画像・動画）への投資姿勢**にある。GCP は Imagen と Veo を自社の主力として世代を重ねている。一方 AWS の Bedrock は、テキスト生成では 18 社以上のモデルを揃える一方、**画像の新規生成は自社の 2 モデルのみ（うち Nova Canvas は EOL 予定）、動画生成は Nova Reel 1 本のみ（同じく EOL 予定）**という状態にある。他社の Stability AI が提供するのは編集・変換系のモデルであって、新規生成モデルではない。
+もう一つの差は、**テキスト生成以外のモダリティ（画像・動画）への投資姿勢**にある。GCP は Imagen と Veo を自社の主力として世代を重ねている。一方 AWS の Bedrock は、テキスト生成では 18 社以上のモデルを揃える一方、**画像の新規生成は自社の 2 モデルのみ（うち Nova Canvas は提供終了予定）、動画生成は Nova Reel 1 本のみ（同じく提供終了予定）**という状態にある。他社の Stability AI が提供するのは編集・変換系のモデルであって、新規生成モデルではない。
 
 つまり **AWS が「モデルの品揃えを提供する場」として強いのはテキスト生成の領域であり、画像・動画生成では品揃えが薄い。** 画像や動画の生成が要件に含まれる場合、この差は選定に直結する。
 
 ### このレイヤーの未確認事項
 
 - Imagen / Veo の具体的な単価。公式料金ページの該当セクションを取得しきれなかった。
-- **Nova Canvas / Nova Reel の後継**は、公式のモデル一覧（https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html ）および Stability AI のモデル一覧（https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards-stability-ai.html ）を確認した限り、**後継となる新規生成モデルは掲載されていない**。EOL 後に何が提供されるかは 2026-07-29 時点で不明。
-- Titan Image Generator G1 v2 自体のライフサイクル（EOL 予定の有無）は個別に確認していない。
+- **Nova Canvas / Nova Reel の後継**は、公式のモデル一覧（https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html ）および Stability AI のモデル一覧（https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards-stability-ai.html ）を確認した限り、**後継となる新規生成モデルは掲載されていない**。提供終了後に何が提供されるかは 2026-07-29 時点で不明。
+- Titan Image Generator G1 v2 自体のライフサイクル（提供終了予定の有無）は個別に確認していない。
 
 ---
 
@@ -500,7 +500,7 @@ GCP は「1 つのサービスに複数のプロセッサ／機能を内包さ�
 
 なぜデータを動かさないことが重要か。理由は 2 つある。
 
-1. **ETL パイプラインの構築・保守コストが消える。** 「DWH からデータを抜いて、ML 基盤へ転送して、学習して、結果を書き戻す」という配管が不要になる。
+1. **ETL パイプライン（データを抽出・変換・転送する処理）の構築・保守コストが消える。** 「データウェアハウス（DWH）からデータを抜いて、ML 基盤へ転送して、学習して、結果を書き戻す」という配管が不要になる。
 2. **権限管理が一箇所で済む。** データが元の場所にとどまるので、IAM や行レベルセキュリティといった既存のガバナンスがそのまま効く。データのコピーが増えるほど、統制は難しくなる。
 
 **このレイヤーは 6 つの中で GCP と AWS の設計思想の差が最も大きい。**
@@ -962,7 +962,7 @@ L4 がこの差を最も鮮明に示す。**BigQuery で ML をやる場合、�
 | AWS | Amazon Q Business → Amazon Quick（新規受付終了） | 2026-07-31 |
 | AWS | Amazon Kendra 新規受付終了 | 2026-07-30 |
 | AWS | Amazon Q Developer CLI → Kiro CLI | — |
-| AWS | Nova Canvas / Nova Reel の EOL | 2026-09-30 |
+| AWS | Nova Canvas / Nova Reel の提供終了 | 2026-09-30 |
 
 ここから言えることが 3 つある。
 
@@ -977,7 +977,7 @@ L4 がこの差を最も鮮明に示す。**BigQuery で ML をやる場合、�
 | 状況 | 寄りやすいクラウド | 理由 |
 | --- | --- | --- |
 | **日本語の帳票・画像 OCR が要件にある** | **GCP** | Textract・Rekognition DetectText が日本語非対応。この 1 点で決まることがある |
-| **画像生成・動画生成が要件にある** | **GCP** | Bedrock は画像の新規生成が自社 2 モデル（うち 1 つは EOL 予定）、動画生成は EOL 予定の 1 本のみ。GCP は Imagen / Veo を世代を重ねて提供している |
+| **画像生成・動画生成が要件にある** | **GCP** | Bedrock は画像の新規生成が自社 2 モデル（うち 1 つは提供終了予定）、動画生成は提供終了予定の 1 本のみ。GCP は Imagen / Veo を世代を重ねて提供している |
 | すでに BigQuery にデータが集まっている | GCP | L4 でデータを動かさずに ML と生成 AI が完結する |
 | すでに S3 中心のデータレイクがある | AWS | S3 Vectors や Bedrock Knowledge Bases との接続が素直 |
 | 複数ベンダーのモデルを比較しながら使いたい | どちらでも可 | Model Garden と Bedrock がほぼ同等 |
@@ -988,31 +988,49 @@ L4 がこの差を最も鮮明に示す。**BigQuery で ML をやる場合、�
 
 ## 10. 用語コラム
 
-本文に出てきた AI 特有の用語を、最小限の定義でまとめる。
+本文に出てきた用語を、最小限の定義でまとめる。**略語はすべて元の英語を併記した。**
 
-| 用語 | 定義 |
+### 10.1 AI・機械学習の用語
+
+| 用語（略語は元の英語） | 定義 |
 | --- | --- |
-| **学習（トレーニング）** | データからモデルのパラメータを決める処理。計算資源を大量に消費し、時間もかかる。**一度やれば済む**（作り直すまで） |
-| **推論（インファレンス）** | 学習済みモデルに入力を与えて結果を得る処理。**リクエストのたびに発生する**。本番運用のコストの大半はこちら |
+| **学習（トレーニング / Training）** | データからモデルのパラメータを決める処理。計算資源を大量に消費し、時間もかかる。**一度やれば済む**（作り直すまで） |
+| **推論（インファレンス / Inference）** | 学習済みモデルに入力を与えて結果を得る処理。**リクエストのたびに発生する**。本番運用のコストの大半はこちら |
 | **基盤モデル（Foundation Model）** | 大量の汎用データで事前学習された巨大なモデル。特定のタスク向けではなく、幅広い用途に応用できる。Gemini、Claude、Nova などがこれ |
-| **ファインチューニング** | 基盤モデルに追加の学習をさせ、特定の用途やデータに合わせて調整すること。RAG と違い、モデルそのものを書き換える |
-| **プロンプト** | モデルへの指示文。同じモデルでも指示の書き方で結果が大きく変わる |
-| **トークン** | モデルがテキストを扱う単位。単語より細かく、文字より粗い。日本語は英語よりトークン数が多くなりやすく、**課金単位がトークンである以上、これはコストに直結する** |
-| **マルチモーダル** | テキストだけでなく、画像・音声・動画も同時に扱えること。Gemini や Claude が該当する |
+| **ファインチューニング（Fine-tuning）** | 基盤モデルに追加の学習をさせ、特定の用途やデータに合わせて調整すること。RAG と違い、モデルそのものを書き換える |
+| **プロンプト（Prompt）** | モデルへの指示文。同じモデルでも指示の書き方で結果が大きく変わる |
+| **トークン（Token）** | モデルがテキストを扱う単位。単語より細かく、文字より粗い。日本語は英語よりトークン数が多くなりやすく、**課金単位がトークンである以上、これはコストに直結する** |
+| **マルチモーダル（Multimodal）** | テキストだけでなく、画像・音声・動画も同時に扱えること。Gemini や Claude が該当する |
 | **埋め込み（Embedding）** | テキストや画像を、意味を保った数値のベクトルに変換したもの。意味が近いもの同士は、ベクトルとしても近い位置になる |
-| **ベクトル検索** | 埋め込みベクトル同士の距離を測って、意味的に近いものを探す検索。キーワードが一致しなくても「意味が近い」文書を見つけられる |
-| **近似最近傍検索（ANN）** | ベクトル検索を高速化する手法。厳密に最も近いものを探すのではなく、十分近いものを高速に返す。大規模データではこれが実用上必須になる |
-| **RAG（検索拡張生成）** | 質問に関連する文書をまず検索し、その内容を根拠としてモデルに回答させる仕組み。モデルを再学習せずに社内データを扱えるのが利点 |
-| **グラウンディング** | モデルの回答を、実在する情報源に紐づけること。RAG はグラウンディングの手段の一つ。これがないとモデルは平然と誤情報を生成する |
-| **ハルシネーション** | モデルが事実でない内容を、もっともらしく生成してしまう現象 |
-| **エージェント** | 複数ステップの推論を行い、外部ツールを呼び、状態を保持しながらタスクを完遂する仕組み。単発の質問応答（RAG）より上位の概念 |
-| **ツール／関数呼び出し** | モデルが外部の API や関数を呼べるようにする仕組み。エージェントが実際に「行動」できるのはこれによる |
-| **MCP（Model Context Protocol）** | エージェントと外部ツール・データソースをつなぐ標準規格。両クラウドが対応している |
-| **A2A（Agent2Agent）** | エージェント同士をつなぐ標準規格。Google が主導し、Linux Foundation へ寄贈された |
-| **MLOps** | 機械学習モデルの開発から本番運用までを継続的に回すための実践。学習・評価・デプロイ・監視・再学習のサイクル |
+| **ベクトル検索（Vector Search）** | 埋め込みベクトル同士の距離を測って、意味的に近いものを探す検索。キーワードが一致しなくても「意味が近い」文書を見つけられる |
+| **ANN**（**A**pproximate **N**earest **N**eighbor / 近似最近傍探索） | ベクトル検索を高速化する手法。厳密に最も近いものを探すのではなく、十分近いものを高速に返す。大規模データではこれが実用上必須になる |
+| **RAG**（**R**etrieval-**A**ugmented **G**eneration / 検索拡張生成） | 質問に関連する文書をまず検索し、その内容を根拠としてモデルに回答させる仕組み。モデルを再学習せずに社内データを扱えるのが利点 |
+| **グラウンディング（Grounding）** | モデルの回答を、実在する情報源に紐づけること。RAG はグラウンディングの手段の一つ。これがないとモデルは平然と誤情報を生成する |
+| **ハルシネーション（Hallucination）** | モデルが事実でない内容を、もっともらしく生成してしまう現象 |
+| **エージェント（Agent）** | 複数ステップの推論を行い、外部ツールを呼び、状態を保持しながらタスクを完遂する仕組み。単発の質問応答（RAG）より上位の概念 |
+| **ツール／関数呼び出し（Function Calling）** | モデルが外部の API や関数を呼べるようにする仕組み。エージェントが実際に「行動」できるのはこれによる |
+| **MCP**（**M**odel **C**ontext **P**rotocol） | エージェントと外部ツール・データソースをつなぐ標準規格。両クラウドが対応している |
+| **A2A**（**A**gent **to** **A**gent） | エージェント同士をつなぐ標準規格。Google が主導し、Linux Foundation へ寄贈された |
+| **MLOps**（**M**achine **L**earning + **Op**eration**s**） | 機械学習モデルの開発から本番運用までを継続的に回すための実践。学習・評価・デプロイ・監視・再学習のサイクル。DevOps の機械学習版という位置づけの造語 |
 | **特徴量（Feature）** | モデルへの入力として使う、データから抽出した数値。「直近 30 日の購入回数」など |
-| **AutoML** | データを与えるだけで、モデルの選定・チューニングまで自動で行う仕組み |
-| **OCR** | 画像内の文字を読み取ってテキスト化する技術。近年は文書の構造まで理解する方向に進化している |
+| **AutoML**（**Auto**mated **M**achine **L**earning） | データを与えるだけで、モデルの選定・チューニングまで自動で行う仕組み |
+| **OCR**（**O**ptical **C**haracter **R**ecognition / 光学文字認識） | 画像内の文字を読み取ってテキスト化する技術。近年は文書の構造まで理解する方向に進化している |
+
+### 10.2 本文に出てくるその他の略語
+
+| 略語（元の英語） | 定義 |
+| --- | --- |
+| **EOL**（**E**nd **o**f **L**ife / 提供終了） | サービスやモデルの提供が終わること。公式ドキュメントでは `Model EOL date: September 30, 2026` のように英略語で書かれる。本資料では引用部分を除き「提供終了」と表記した |
+| **DWH**（**D**ata **W**are**h**ouse / データウェアハウス） | 分析のために大量のデータを集約して保管する基盤。BigQuery や Amazon Redshift がこれにあたる |
+| **OLTP**（**O**n**l**ine **T**ransaction **P**rocessing / オンライントランザクション処理） | 業務システムが日々の取引を読み書きするデータベースの使われ方。注文登録やユーザー情報の更新など。分析用の DWH とは求められる性能が違う |
+| **ETL**（**E**xtract 抽出・**T**ransform 変換・**L**oad 転送） | あるシステムのデータを加工して別のシステムへ移す処理のこと |
+| **PII**（**P**ersonally **I**dentifiable **I**nformation / 個人を特定できる情報） | 氏名、電話番号、住所など。AI サービスでは、これを自動で検出・伏せ字にする機能の有無が問題になる |
+| **RCA**（**R**oot **C**ause **A**nalysis / 根本原因分析） | 障害が起きたとき、表面的な症状ではなく本当の原因を突き止める作業。L6 の運用支援 AI が助けようとしているのがこれ |
+| **IVR**（**I**nteractive **V**oice **R**esponse / 自動音声応答） | 電話をかけると流れる「ご用件の番号を押してください」のような自動応答システム |
+| **IaC**（**I**nfrastructure **a**s **C**ode） | サーバーやネットワークの構成をコードで記述し、そのコードから環境を作る手法。Terraform などがこれにあたる |
+| **BYOI**（**B**ring **Y**our **O**wn **I**ndex） | AWS が Q Business から Amazon Quick への移行で用意した仕組み。既存の検索インデックスをそのまま新サービスへ持ち込めるという意味 |
+| **OCU**（**O**pen**S**earch **C**ompute **U**nit） | OpenSearch Serverless の課金単位。計算資源の使用量を表す |
+| **ANN / RAG / MCP / A2A ほか** | AI 固有の略語は 10.1 を参照 |
 
 ---
 
@@ -1033,7 +1051,7 @@ L4 がこの差を最も鮮明に示す。**BigQuery で ML をやる場合、�
 | Amazon Bedrock 製品ページ | https://aws.amazon.com/bedrock/ |
 | Amazon Bedrock 料金 | https://aws.amazon.com/bedrock/pricing/ |
 | Amazon Nova | https://aws.amazon.com/nova/ |
-| Nova Canvas モデルカード（EOL 記載） | https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-canvas.html |
+| Nova Canvas モデルカード（提供終了日の記載あり） | https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-canvas.html |
 | Nova Reel モデルカード | https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-reel.html |
 | **Bedrock の全モデル一覧**（提供元ごと） | https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html |
 | Bedrock の Stability AI モデル一覧（編集系のみ） | https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards-stability-ai.html |
