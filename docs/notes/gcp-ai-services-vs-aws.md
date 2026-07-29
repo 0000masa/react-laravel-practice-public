@@ -167,7 +167,7 @@ AI サービスを列挙するとき、分類の軸を決めないと比較が�
   - Nova Canvas（画像生成）、Nova Reel（動画生成）
 - **課金単位**: テキスト系はトークン数。画像・動画系は生成物の量
 - **公式ドキュメント**: https://aws.amazon.com/nova/
-- **注意**: **Nova Canvas と Nova Reel は終息予定。** 公式モデルカードに `Model EOL date: September 30, 2026`、`Model lifecycle: Legacy (certain regions)` と明記されている（https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-canvas.html ）。AWS の画像・動画生成は自社モデルではなく Bedrock 上の他社モデルへ寄せる方向にある。
+- **注意**: **Nova Canvas と Nova Reel は終息予定。** 公式モデルカードに `Model EOL date: September 30, 2026`、`Model lifecycle: Legacy (certain regions)` と明記されている（https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-canvas.html ）。**この 2 つが EOL を迎えると、Bedrock の公式モデル一覧には「テキストから画像を生成するモデル」は Titan Image Generator G1 v2（旧世代）だけ、「動画を生成するモデル」は 1 つも残らない**（一覧: https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html ）。
 
 ### GCP ↔ AWS 対応表（L1）
 
@@ -175,20 +175,23 @@ AI サービスを列挙するとき、分類の軸を決めないと比較が�
 | --- | --- | --- | --- |
 | Gemini API（Agent Platform 経由） | Amazon Bedrock（Amazon Nova 呼び出し） | ◎ ほぼ同等 | どちらも「自社の企業向け基盤の上で、自社モデルを IAM 等と統合して呼ぶ」構図で一致する |
 | Model Garden | Amazon Bedrock（他社モデルカタログ全体） | ◎ ほぼ同等 | 複数社モデルを単一 API で束ねる思想は同じ。違いは階層で、GCP は Model Garden をエージェント基盤の一機能として位置づけ、AWS は Bedrock 自体がその役割を担う |
-| Imagen | Amazon Nova Canvas ／ Bedrock 上の他社画像モデル | △ 粒度が違う | Imagen は主力製品として強化が続くが、Nova Canvas は 2026-09-30 で EOL。AWS は自社画像モデルから撤退方向で、力の入れ方が対照的 |
-| Veo | Amazon Nova Reel ／ Bedrock 上の他社動画モデル | △ 粒度が違う | 同上。Nova Reel も 2026-09-30 で EOL |
+| Imagen | Amazon Nova Canvas、Titan Image Generator G1 v2（生成）＋ Stability AI の 13 モデル（編集） | △ 粒度が違う | **品揃えの構造が違う。** GCP は自社の生成モデル Imagen が主力。AWS 側で「テキストから画像を新規生成する」モデルは自社の 2 つだけで、**Nova Canvas は 2026-09-30 EOL、Titan Image Generator G1 v2 は旧世代**。他社（Stability AI）が提供する 13 モデルはすべて**編集・変換系**（背景除去、インペイント、アップスケール、スタイル転送など）で、新規生成モデルは含まれない |
+| Veo | Amazon Nova Reel | △ 粒度が違う | **品揃えの厚みが違う。** GCP は Veo 2 / 3 / 3.1 と世代を重ねている。AWS は **Nova Reel 1 本のみで、それが 2026-09-30 に EOL**。公式のモデル一覧に他の動画生成モデルは掲載されておらず（TwelveLabs は動画の「理解」であって生成ではない）、**EOL 後は Bedrock 上の動画生成の選択肢が実質なくなる** |
 | Google AI Studio（API キーだけで使える軽量な入口） | 相当なし | ✕ 相当なし | Bedrock は AWS アカウント前提のマネージドサービスとして統一されており、「無料・APIキーのみ」の軽量な入口という概念がない |
 
 ### このレイヤーの設計思想の違い
 
 GCP は入口を分けている。**軽く始める入口（Google AI Studio）**と**統制の効く本番向けの入口（Gemini Enterprise Agent Platform）**を意図的に分離し、フェーズによって使い分けさせる。対して AWS は Bedrock という単一サービスの中に自社モデル（Nova）と他社モデルをフラットに並べ、入口を分けない設計で一貫している。
 
-もう一つの差は自社モデルへの投資姿勢。GCP は Imagen / Veo を主力として強化し続けている一方、AWS は自社の画像・動画モデルを EOL にして他社モデルへ集約しつつある。**AWS は「モデルの品揃えを提供する場」であることを重視し、GCP は「自社モデルの性能」で戦っている**、と読める。
+もう一つの差は、**テキスト生成以外のモダリティ（画像・動画）への投資姿勢**にある。GCP は Imagen と Veo を自社の主力として世代を重ねている。一方 AWS の Bedrock は、テキスト生成では 18 社以上のモデルを揃える一方、**画像の新規生成は自社の 2 モデルのみ（うち Nova Canvas は EOL 予定）、動画生成は Nova Reel 1 本のみ（同じく EOL 予定）**という状態にある。他社の Stability AI が提供するのは編集・変換系のモデルであって、新規生成モデルではない。
+
+つまり **AWS が「モデルの品揃えを提供する場」として強いのはテキスト生成の領域であり、画像・動画生成では品揃えが薄い。** 画像や動画の生成が要件に含まれる場合、この差は選定に直結する。
 
 ### このレイヤーの未確認事項
 
 - Imagen / Veo の具体的な単価。公式料金ページの該当セクションを取得しきれなかった。
-- Nova Canvas / Nova Reel の後継として案内されている具体的なモデル名（EOL 日付自体は公式モデルカードで確認済み）。
+- **Nova Canvas / Nova Reel の後継**は、公式のモデル一覧（https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html ）および Stability AI のモデル一覧（https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards-stability-ai.html ）を確認した限り、**後継となる新規生成モデルは掲載されていない**。EOL 後に何が提供されるかは 2026-07-29 時点で不明。
+- Titan Image Generator G1 v2 自体のライフサイクル（EOL 予定の有無）は個別に確認していない。
 
 ---
 
@@ -974,6 +977,7 @@ L4 がこの差を最も鮮明に示す。**BigQuery で ML をやる場合、�
 | 状況 | 寄りやすいクラウド | 理由 |
 | --- | --- | --- |
 | **日本語の帳票・画像 OCR が要件にある** | **GCP** | Textract・Rekognition DetectText が日本語非対応。この 1 点で決まることがある |
+| **画像生成・動画生成が要件にある** | **GCP** | Bedrock は画像の新規生成が自社 2 モデル（うち 1 つは EOL 予定）、動画生成は EOL 予定の 1 本のみ。GCP は Imagen / Veo を世代を重ねて提供している |
 | すでに BigQuery にデータが集まっている | GCP | L4 でデータを動かさずに ML と生成 AI が完結する |
 | すでに S3 中心のデータレイクがある | AWS | S3 Vectors や Bedrock Knowledge Bases との接続が素直 |
 | 複数ベンダーのモデルを比較しながら使いたい | どちらでも可 | Model Garden と Bedrock がほぼ同等 |
@@ -1030,6 +1034,9 @@ L4 がこの差を最も鮮明に示す。**BigQuery で ML をやる場合、�
 | Amazon Bedrock 料金 | https://aws.amazon.com/bedrock/pricing/ |
 | Amazon Nova | https://aws.amazon.com/nova/ |
 | Nova Canvas モデルカード（EOL 記載） | https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-canvas.html |
+| Nova Reel モデルカード | https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-amazon-nova-reel.html |
+| **Bedrock の全モデル一覧**（提供元ごと） | https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards.html |
+| Bedrock の Stability AI モデル一覧（編集系のみ） | https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards-stability-ai.html |
 
 ### L2 ML プラットフォーム
 
