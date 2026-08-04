@@ -1,4 +1,4 @@
-> 関連：[../adr/0010-terraform-plan-summary-without-ai.md](../adr/0010-terraform-plan-summary-without-ai.md)（この部品を作った設計判断）、実装した本体 [`.github/actions/tf-plan-summary/action.yml`](../../.github/actions/tf-plan-summary/action.yml) と、それを呼ぶ [`.github/workflows/terraform-apply-plan.yml`](../../.github/workflows/terraform-apply-plan.yml) / [`.github/workflows/preview-create.yml`](../../.github/workflows/preview-create.yml)。
+> 関連：[../../adr/0010-terraform-plan-summary-without-ai.md](../../adr/0010-terraform-plan-summary-without-ai.md)（この部品を作った設計判断）、実装した本体 [`.github/actions/tf-plan-summary/action.yml`](../../../.github/actions/tf-plan-summary/action.yml) と、それを呼ぶ [`.github/workflows/terraform-apply-plan.yml`](../../../.github/workflows/terraform-apply-plan.yml) / [`.github/workflows/preview-create.yml`](../../../.github/workflows/preview-create.yml)。
 >
 > 📌 **前提**：このプロジェクトは Terraform のプラン要約処理を **Composite Action** として `.github/actions/tf-plan-summary/` に切り出し、2本のワークフローから `uses:` で共有しています。本書は「GitHub Actions の処理を再利用・部品化する方法」を全体地図として整理し、**なぜ今回 Composite Action を選んだのか**を、採用しなかった選択肢（JavaScript / Docker action / Reusable Workflow）も含めて仕組みから理解するための教育ノートです。
 
@@ -103,7 +103,7 @@ runs:
 
 ## ④ Composite Action 深掘り — `tf-plan-summary` を読む
 
-実際に作った部品を題材に、Composite Action の骨格を見ます。場所は [`.github/actions/tf-plan-summary/action.yml`](../../.github/actions/tf-plan-summary/action.yml)。
+実際に作った部品を題材に、Composite Action の骨格を見ます。場所は [`.github/actions/tf-plan-summary/action.yml`](../../../.github/actions/tf-plan-summary/action.yml)。
 
 ### (1) 入口の宣言：`name` / `inputs`
 
@@ -143,7 +143,7 @@ runs:
 
 ### (3) 呼び出し側：たった数行
 
-呼ぶ側（[`terraform-apply-plan.yml:107`](../../.github/workflows/terraform-apply-plan.yml)）はこうです：
+呼ぶ側（[`terraform-apply-plan.yml:107`](../../../.github/workflows/terraform-apply-plan.yml)）はこうです：
 
 ```yaml
 - name: Summarize plan
@@ -227,7 +227,7 @@ jobs:
 
 ## ⑦ このプロジェクトはなぜ Composite を選んだか
 
-`tf-plan-summary` の仕事を思い出します（[ADR 0010](../adr/0010-terraform-plan-summary-without-ai.md)）。ワークフローは3段構成でした：
+`tf-plan-summary` の仕事を思い出します（[ADR 0010](../../adr/0010-terraform-plan-summary-without-ai.md)）。ワークフローは3段構成でした：
 
 ```
 ① terraform plan -out=tfplan   ← tfplan ファイルを作る
@@ -348,9 +348,9 @@ jobs:
 
 自力で読む練習に、まずこの3つを突き合わせてみてください：
 
-- [`.github/actions/tf-plan-summary/action.yml`](../../.github/actions/tf-plan-summary/action.yml) — 部品本体（Composite）。
-- [`.github/workflows/terraform-apply-plan.yml`](../../.github/workflows/terraform-apply-plan.yml)（107行目付近）と [`.github/workflows/preview-create.yml`](../../.github/workflows/preview-create.yml)（135行目付近）— **同じ部品を2箇所から呼んでいる**様子。
-- [ADR 0010](../adr/0010-terraform-plan-summary-without-ai.md) — なぜこの部品が生まれたか（設計判断）。
+- [`.github/actions/tf-plan-summary/action.yml`](../../../.github/actions/tf-plan-summary/action.yml) — 部品本体（Composite）。
+- [`.github/workflows/terraform-apply-plan.yml`](../../../.github/workflows/terraform-apply-plan.yml)（107行目付近）と [`.github/workflows/preview-create.yml`](../../../.github/workflows/preview-create.yml)（135行目付近）— **同じ部品を2箇所から呼んでいる**様子。
+- [ADR 0010](../../adr/0010-terraform-plan-summary-without-ai.md) — なぜこの部品が生まれたか（設計判断）。
 - 公式ドキュメント：「Creating a composite action」「Reusing workflows」（GitHub Docs）。本書の内容の一次情報。
 
 ## 理解度チェッククイズ

@@ -1,4 +1,4 @@
-> 関連：[../deploy/pr-preview-environment.md](../deploy/pr-preview-environment.md)（PR ごとの検証環境の全体設計）。本書はその中の **「state をどう PR ごとに分けるか」** という一点を深掘りし、採用しなかった選択肢（Terraform workspace）も含めて解説する。
+> 関連：[../../deploy/pr-preview-environment.md](../../deploy/pr-preview-environment.md)（PR ごとの検証環境の全体設計）。本書はその中の **「state をどう PR ごとに分けるか」** という一点を深掘りし、採用しなかった選択肢（Terraform workspace）も含めて解説する。
 >
 > 📌 **前提**：このプロジェクトは preview 環境の state 分離に **backend キーの差し替え方式**を採用しており、**Terraform workspace は使っていません**。本書は「workspace とは何か」「使えばどうなるか」「なぜ使わなかったか」を、仕組みから理解するための教育目的のノートです。
 
