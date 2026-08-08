@@ -1,0 +1,21 @@
+{
+  // リポジトリのルートを開く前提の設定。
+  // 各拡張の設定ファイルはサブディレクトリにあるため、場所を明示する。
+
+  // ESLint の設定は frontend/www/eslint.config.js にある
+  "eslint.workingDirectories": [
+    { "directory": "frontend/www", "changeProcessCWD": true }
+  ],
+
+  // Tailwind の設定は frontend/www/tailwind.config.js にある
+  "tailwindCSS.experimental.configFile": "frontend/www/tailwind.config.js",
+
+  // 整形の責任分界: TS/JS/CSS = Prettier、PHP = Pint (composer)、それ以外 = 手書き
+  "[javascript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescript]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[css]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+
+  // VS Code 内蔵の PHP 補完を止める（intelephense と候補が二重に出るため）
+  "php.suggest.basic": false
+}

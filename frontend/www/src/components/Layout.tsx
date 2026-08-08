@@ -1,6 +1,6 @@
-import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import React from "react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
@@ -8,14 +8,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate("/login");
   };
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     `px-3 py-2 text-sm font-medium rounded-md ${
       isActive
-        ? 'bg-gray-100 text-gray-900'
-        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+        ? "bg-gray-100 text-gray-900"
+        : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
     }`;
 
   return (
@@ -67,9 +67,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       </nav>
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0 space-y-6">
-          {children}
-        </div>
+        <div className="px-4 py-6 sm:px-0 space-y-6">{children}</div>
       </main>
     </div>
   );

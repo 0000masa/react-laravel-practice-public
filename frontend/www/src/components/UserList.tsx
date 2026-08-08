@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import apiClient from '../lib/api';
+import React, { useEffect, useState } from "react";
+import apiClient from "../lib/api";
 
 interface User {
   id: number;
@@ -29,15 +29,15 @@ const UserList: React.FC = () => {
     const fetchUsers = async () => {
       try {
         setLoading(true);
-        const response = await apiClient.get('/users', {
+        const response = await apiClient.get("/users", {
           params: { page: currentPage },
         });
         setUsers(response.data.users);
         setPagination(response.data.pagination);
         setError(null);
       } catch (err) {
-        console.error('ユーザー一覧の取得に失敗しました:', err);
-        setError('ユーザー一覧の取得に失敗しました');
+        console.error("ユーザー一覧の取得に失敗しました:", err);
+        setError("ユーザー一覧の取得に失敗しました");
       } finally {
         setLoading(false);
       }
@@ -117,7 +117,7 @@ const UserList: React.FC = () => {
                     {user.email}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(user.created_at).toLocaleString('ja-JP')}
+                    {new Date(user.created_at).toLocaleString("ja-JP")}
                   </td>
                 </tr>
               ))
@@ -129,7 +129,8 @@ const UserList: React.FC = () => {
       {pagination && pagination.total > 0 && (
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-600">
-            {pagination.from ?? 0} - {pagination.to ?? 0} / {pagination.total} 件
+            {pagination.from ?? 0} - {pagination.to ?? 0} / {pagination.total}{" "}
+            件
           </p>
           <div className="flex items-center gap-2">
             <button

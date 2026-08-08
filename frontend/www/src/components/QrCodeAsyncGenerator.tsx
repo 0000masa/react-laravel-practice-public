@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import apiClient from '../lib/api';
+import React, { useState } from "react";
+import apiClient from "../lib/api";
 
 const QrCodeAsyncGenerator: React.FC = () => {
-  const [data, setData] = useState<string>('');
+  const [data, setData] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -11,7 +11,7 @@ const QrCodeAsyncGenerator: React.FC = () => {
     e.preventDefault();
 
     if (!data.trim()) {
-      setError('データを入力してください');
+      setError("データを入力してください");
       return;
     }
 
@@ -20,15 +20,15 @@ const QrCodeAsyncGenerator: React.FC = () => {
       setError(null);
       setSuccess(null);
 
-      await apiClient.post('/qrcodes/async', { data });
+      await apiClient.post("/qrcodes/async", { data });
 
-      setSuccess('QRコードの非同期生成ジョブを投入しました');
-      setData('');
+      setSuccess("QRコードの非同期生成ジョブを投入しました");
+      setData("");
 
-      window.dispatchEvent(new Event('qrcode-created'));
+      window.dispatchEvent(new Event("qrcode-created"));
     } catch (error) {
-      console.error('QRコード非同期生成エラー:', error);
-      setError('QRコードの非同期生成に失敗しました');
+      console.error("QRコード非同期生成エラー:", error);
+      setError("QRコードの非同期生成に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -36,10 +36,15 @@ const QrCodeAsyncGenerator: React.FC = () => {
 
   return (
     <div className="bg-white shadow rounded-lg p-6">
-      <h3 className="text-lg font-medium text-gray-900 mb-4">QRコード非同期生成</h3>
+      <h3 className="text-lg font-medium text-gray-900 mb-4">
+        QRコード非同期生成
+      </h3>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="qrcode-async-data" className="block text-sm font-medium text-gray-700 mb-2">
+          <label
+            htmlFor="qrcode-async-data"
+            className="block text-sm font-medium text-gray-700 mb-2"
+          >
             QRコードに含めるデータ
           </label>
           <textarea
@@ -73,7 +78,7 @@ const QrCodeAsyncGenerator: React.FC = () => {
           disabled={loading || !data.trim()}
           className="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          {loading ? '送信中...' : 'QRコードを非同期生成'}
+          {loading ? "送信中..." : "QRコードを非同期生成"}
         </button>
       </form>
     </div>

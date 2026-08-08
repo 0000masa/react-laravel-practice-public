@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import apiClient from '../lib/api';
-import Layout from '../components/Layout';
+import React, { useEffect, useState } from "react";
+import apiClient from "../lib/api";
+import Layout from "../components/Layout";
 
 // DB性能学習用ページ。GET /api/posts をパラメータ違いで叩き、
 // 所要時間と EXPLAIN（実行計画）を見比べる。設計は docs/db/query-performance-experiment.md。
@@ -43,7 +43,7 @@ interface Category {
   name: string;
 }
 
-type MatchMode = 'partial' | 'prefix';
+type MatchMode = "partial" | "prefix";
 
 // 5つの検証プリセット（押すと各入力欄へ代表値をセット）
 interface Preset {
@@ -60,43 +60,61 @@ interface Preset {
 
 const PRESETS: Preset[] = [
   {
-    label: '基準: user_id で絞る',
-    hint: 'WHERE user_id=? … index が効く（速い）',
-    values: { userId: '5', categoryId: '', page: '1', q: '', match: 'partial' },
+    label: "基準: user_id で絞る",
+    hint: "WHERE user_id=? … index が効く（速い）",
+    values: { userId: "5", categoryId: "", page: "1", q: "", match: "partial" },
   },
   {
-    label: '深いOFFSET',
-    hint: 'LIMIT 50 OFFSET 999950 … index があっても遅い',
-    values: { userId: '', categoryId: '', page: '20000', q: '', match: 'partial' },
+    label: "深いOFFSET",
+    hint: "LIMIT 50 OFFSET 999950 … index があっても遅い",
+    values: {
+      userId: "",
+      categoryId: "",
+      page: "20000",
+      q: "",
+      match: "partial",
+    },
   },
   {
-    label: '部分一致LIKE',
+    label: "部分一致LIKE",
     hint: "title LIKE '%NEEDLE%' … 先頭%で全走査（遅い）",
-    values: { userId: '', categoryId: '', page: '1', q: 'NEEDLE', match: 'partial' },
+    values: {
+      userId: "",
+      categoryId: "",
+      page: "1",
+      q: "NEEDLE",
+      match: "partial",
+    },
   },
   {
-    label: '前方一致LIKE',
+    label: "前方一致LIKE",
     hint: "title LIKE 'NEEDLE%' … index の範囲スキャン（速い・件数は少）",
-    values: { userId: '', categoryId: '', page: '1', q: 'NEEDLE', match: 'prefix' },
+    values: {
+      userId: "",
+      categoryId: "",
+      page: "1",
+      q: "NEEDLE",
+      match: "prefix",
+    },
   },
   {
-    label: 'カテゴリ絞り込み',
-    hint: 'WHERE category_id=? … 低選択性で index 無視されがち',
-    values: { userId: '', categoryId: '1', page: '1', q: '', match: 'partial' },
+    label: "カテゴリ絞り込み",
+    hint: "WHERE category_id=? … 低選択性で index 無視されがち",
+    values: { userId: "", categoryId: "1", page: "1", q: "", match: "partial" },
   },
 ];
 
 const inputClass =
-  'w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500';
-const labelClass = 'block text-sm font-medium text-gray-700 mb-1';
+  "w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500";
+const labelClass = "block text-sm font-medium text-gray-700 mb-1";
 
 const PostBenchPage: React.FC = () => {
   // フォームの状態
-  const [userId, setUserId] = useState<string>('');
-  const [categoryId, setCategoryId] = useState<string>('');
-  const [page, setPage] = useState<string>('1');
-  const [q, setQ] = useState<string>('');
-  const [match, setMatch] = useState<MatchMode>('partial');
+  const [userId, setUserId] = useState<string>("");
+  const [categoryId, setCategoryId] = useState<string>("");
+  const [page, setPage] = useState<string>("1");
+  const [q, setQ] = useState<string>("");
+  const [match, setMatch] = useState<MatchMode>("partial");
   const [explain, setExplain] = useState<boolean>(true);
 
   // 結果の状態
@@ -112,9 +130,9 @@ const PostBenchPage: React.FC = () => {
   // カテゴリのプルダウン用データを初回に取得
   useEffect(() => {
     apiClient
-      .get('/categories')
+      .get("/categories")
       .then((res) => setCategories(res.data.categories))
-      .catch((err) => console.error('カテゴリ取得に失敗:', err));
+      .catch((err) => console.error("カテゴリ取得に失敗:", err));
   }, []);
 
   const applyPreset = (preset: Preset) => {
@@ -144,15 +162,15 @@ const PostBenchPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiClient.get('/posts', { params });
+      const res = await apiClient.get("/posts", { params });
       setPosts(res.data.posts);
       setPagination(res.data.pagination);
       setElapsedMs(res.data.elapsed_ms ?? null);
       setSql(res.data.sql ?? null);
       setExplainRows(res.data.explain ?? null);
     } catch (err) {
-      console.error('投稿の取得に失敗しました:', err);
-      setError('投稿の取得に失敗しました');
+      console.error("投稿の取得に失敗しました:", err);
+      setError("投稿の取得に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -162,10 +180,14 @@ const PostBenchPage: React.FC = () => {
     <Layout>
       {/* 操作パネル */}
       <div className="bg-white shadow rounded-lg p-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-1">DB検証 (posts)</h3>
+        <h3 className="text-lg font-medium text-gray-900 mb-1">
+          DB検証 (posts)
+        </h3>
         <p className="text-sm text-gray-500 mb-4">
-          index が効く/効かないクエリを叩き比べる学習用ページ。レコードは{' '}
-          <code className="text-xs bg-gray-100 px-1 rounded">php artisan bench:seed --count=N</code>{' '}
+          index が効く/効かないクエリを叩き比べる学習用ページ。レコードは{" "}
+          <code className="text-xs bg-gray-100 px-1 rounded">
+            php artisan bench:seed --count=N
+          </code>{" "}
           で投入する。
         </p>
 
@@ -201,7 +223,9 @@ const PostBenchPage: React.FC = () => {
           </div>
 
           <div>
-            <label className={labelClass}>category_id（プルダウン・任意）</label>
+            <label className={labelClass}>
+              category_id（プルダウン・任意）
+            </label>
             <select
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
@@ -269,11 +293,13 @@ const PostBenchPage: React.FC = () => {
           disabled={loading}
           className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          {loading ? '実行中...' : '実行'}
+          {loading ? "実行中..." : "実行"}
         </button>
 
         {error && (
-          <div className="mt-4 bg-red-50 text-red-700 px-4 py-3 rounded-md text-sm">{error}</div>
+          <div className="mt-4 bg-red-50 text-red-700 px-4 py-3 rounded-md text-sm">
+            {error}
+          </div>
         )}
       </div>
 
@@ -285,13 +311,13 @@ const PostBenchPage: React.FC = () => {
             <div>
               <p className="text-xs text-gray-500 uppercase">サーバ側SQL時間</p>
               <p className="text-2xl font-semibold text-gray-900">
-                {elapsedMs !== null ? `${elapsedMs} ms` : '-'}
+                {elapsedMs !== null ? `${elapsedMs} ms` : "-"}
               </p>
             </div>
             <div>
               <p className="text-xs text-gray-500 uppercase">総件数 (total)</p>
               <p className="text-2xl font-semibold text-gray-900">
-                {pagination ? pagination.total.toLocaleString() : '-'}
+                {pagination ? pagination.total.toLocaleString() : "-"}
               </p>
             </div>
           </div>
@@ -307,12 +333,24 @@ const PostBenchPage: React.FC = () => {
 
           {explainRows && explainRows.length > 0 && (
             <div className="overflow-x-auto">
-              <p className="text-xs text-gray-500 uppercase mb-1">EXPLAIN（実行計画）</p>
+              <p className="text-xs text-gray-500 uppercase mb-1">
+                EXPLAIN（実行計画）
+              </p>
               <table className="min-w-full divide-y divide-gray-200 text-xs">
                 <thead className="bg-gray-50">
                   <tr>
-                    {['table', 'type', 'possible_keys', 'key', 'rows', 'Extra'].map((h) => (
-                      <th key={h} className="px-3 py-2 text-left font-medium text-gray-500">
+                    {[
+                      "table",
+                      "type",
+                      "possible_keys",
+                      "key",
+                      "rows",
+                      "Extra",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="px-3 py-2 text-left font-medium text-gray-500"
+                      >
                         {h}
                       </th>
                     ))}
@@ -321,27 +359,35 @@ const PostBenchPage: React.FC = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {explainRows.map((row) => (
                     <tr key={row.id}>
-                      <td className="px-3 py-2">{row.table ?? '-'}</td>
+                      <td className="px-3 py-2">{row.table ?? "-"}</td>
                       {/* type=ALL / Extra=Using filesort は「遅い」サイン */}
                       <td
                         className={`px-3 py-2 font-medium ${
-                          row.type === 'ALL' ? 'text-red-600' : 'text-green-700'
+                          row.type === "ALL" ? "text-red-600" : "text-green-700"
                         }`}
                       >
-                        {row.type ?? '-'}
+                        {row.type ?? "-"}
                       </td>
-                      <td className="px-3 py-2">{row.possible_keys ?? '-'}</td>
-                      <td className="px-3 py-2">{row.key ?? '(未使用)'}</td>
-                      <td className="px-3 py-2">{row.rows?.toLocaleString() ?? '-'}</td>
-                      <td className="px-3 py-2">{row.Extra ?? '-'}</td>
+                      <td className="px-3 py-2">{row.possible_keys ?? "-"}</td>
+                      <td className="px-3 py-2">{row.key ?? "(未使用)"}</td>
+                      <td className="px-3 py-2">
+                        {row.rows?.toLocaleString() ?? "-"}
+                      </td>
+                      <td className="px-3 py-2">{row.Extra ?? "-"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <p className="text-xs text-gray-500 mt-2">
-                目安: <span className="text-red-600 font-medium">type=ALL</span> や{' '}
-                <span className="text-red-600 font-medium">Using filesort</span> は全走査・全ソートで遅い。
-                <span className="text-green-700 font-medium"> type=ref/range</span> は index が効いている。
+                目安: <span className="text-red-600 font-medium">type=ALL</span>{" "}
+                や{" "}
+                <span className="text-red-600 font-medium">Using filesort</span>{" "}
+                は全走査・全ソートで遅い。
+                <span className="text-green-700 font-medium">
+                  {" "}
+                  type=ref/range
+                </span>{" "}
+                は index が効いている。
               </p>
             </div>
           )}
@@ -355,7 +401,7 @@ const PostBenchPage: React.FC = () => {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                {['ID', 'user', 'category', 'title'].map((h) => (
+                {["ID", "user", "category", "title"].map((h) => (
                   <th
                     key={h}
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
@@ -368,21 +414,28 @@ const PostBenchPage: React.FC = () => {
             <tbody className="bg-white divide-y divide-gray-200">
               {posts.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                  <td
+                    colSpan={4}
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
                     データがありません（「実行」を押してください）
                   </td>
                 </tr>
               ) : (
                 posts.map((post) => (
                   <tr key={post.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{post.id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {post.id}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {post.user?.name ?? `#${post.user_id}`}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {post.category?.name ?? `#${post.category_id}`}
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{post.title}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900">
+                      {post.title}
+                    </td>
                   </tr>
                 ))
               )}
@@ -393,7 +446,8 @@ const PostBenchPage: React.FC = () => {
         {pagination && pagination.total > 0 && (
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-gray-600">
-              {pagination.from ?? 0} - {pagination.to ?? 0} / {pagination.total.toLocaleString()} 件
+              {pagination.from ?? 0} - {pagination.to ?? 0} /{" "}
+              {pagination.total.toLocaleString()} 件
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -411,7 +465,9 @@ const PostBenchPage: React.FC = () => {
                 type="button"
                 className="px-3 py-1 text-sm rounded border border-gray-300 text-gray-700 disabled:opacity-50"
                 onClick={() => runQuery(pagination.current_page + 1)}
-                disabled={pagination.current_page >= pagination.last_page || loading}
+                disabled={
+                  pagination.current_page >= pagination.last_page || loading
+                }
               >
                 次へ
               </button>

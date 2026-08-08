@@ -1,19 +1,19 @@
-import React, { useState } from 'react';
-import apiClient from '../lib/api';
+import React, { useState } from "react";
+import apiClient from "../lib/api";
 
 const MailSender: React.FC = () => {
-  const [to, setTo] = useState<string>('');
-  const [subject, setSubject] = useState<string>('');
-  const [message, setMessage] = useState<string>('');
+  const [to, setTo] = useState<string>("");
+  const [subject, setSubject] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!to.trim() || !subject.trim() || !message.trim()) {
-      setError('すべての項目を入力してください');
+      setError("すべての項目を入力してください");
       return;
     }
 
@@ -22,19 +22,19 @@ const MailSender: React.FC = () => {
       setError(null);
       setSuccess(null);
 
-      await apiClient.post('/mail/send', {
+      await apiClient.post("/mail/send", {
         to,
         subject,
         message,
       });
-      
-      setSuccess('メールを送信しました');
-      setTo('');
-      setSubject('');
-      setMessage('');
+
+      setSuccess("メールを送信しました");
+      setTo("");
+      setSubject("");
+      setMessage("");
     } catch (error) {
-      console.error('メール送信エラー:', error);
-      setError('メールの送信に失敗しました');
+      console.error("メール送信エラー:", error);
+      setError("メールの送信に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -45,7 +45,10 @@ const MailSender: React.FC = () => {
       <h3 className="text-lg font-medium text-gray-900 mb-4">メール送信</h3>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="mail-to" className="block text-sm font-medium text-gray-700 mb-2">
+          <label
+            htmlFor="mail-to"
+            className="block text-sm font-medium text-gray-700 mb-2"
+          >
             送信先メールアドレス
           </label>
           <input
@@ -60,7 +63,10 @@ const MailSender: React.FC = () => {
         </div>
 
         <div>
-          <label htmlFor="mail-subject" className="block text-sm font-medium text-gray-700 mb-2">
+          <label
+            htmlFor="mail-subject"
+            className="block text-sm font-medium text-gray-700 mb-2"
+          >
             件名
           </label>
           <input
@@ -76,7 +82,10 @@ const MailSender: React.FC = () => {
         </div>
 
         <div>
-          <label htmlFor="mail-message" className="block text-sm font-medium text-gray-700 mb-2">
+          <label
+            htmlFor="mail-message"
+            className="block text-sm font-medium text-gray-700 mb-2"
+          >
             メッセージ
           </label>
           <textarea
@@ -93,13 +102,13 @@ const MailSender: React.FC = () => {
             {message.length} / 5000 文字
           </p>
         </div>
-        
+
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
             {error}
           </div>
         )}
-        
+
         {success && (
           <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded">
             {success}
@@ -111,7 +120,7 @@ const MailSender: React.FC = () => {
           disabled={loading || !to.trim() || !subject.trim() || !message.trim()}
           className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          {loading ? '送信中...' : 'メールを送信'}
+          {loading ? "送信中..." : "メールを送信"}
         </button>
       </form>
     </div>
@@ -119,6 +128,3 @@ const MailSender: React.FC = () => {
 };
 
 export default MailSender;
-
-
-

@@ -1,11 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
-import apiClient from '../lib/api';
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
+import apiClient from "../lib/api";
 
 // 認証モード: 'password' のときはメール+パスワードフォーム、それ以外（既定）は Google ログイン。
 // preview 環境では VITE_AUTH_MODE=password を渡してパスワードログインを使う。
-const AUTH_MODE = import.meta.env.VITE_AUTH_MODE ?? 'google';
+const AUTH_MODE = import.meta.env.VITE_AUTH_MODE ?? "google";
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -14,19 +14,19 @@ const Login: React.FC = () => {
   const hasCleanedError = useRef(false);
 
   // パスワードログイン用の状態
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // URLパラメータからエラーメッセージを取得
-  const errorParam = searchParams.get('error');
+  const errorParam = searchParams.get("error");
   const error = errorParam ? decodeURIComponent(errorParam) : null;
 
   // 既にログインしている場合はダッシュボードへリダイレクト
   useEffect(() => {
     if (user) {
-      navigate('/dashboard');
+      navigate("/dashboard");
     }
   }, [user, navigate]);
 
@@ -36,7 +36,7 @@ const Login: React.FC = () => {
       hasCleanedError.current = true;
       // URLパラメータを削除（replace: trueで履歴に残さない）
       const newSearchParams = new URLSearchParams(searchParams);
-      newSearchParams.delete('error');
+      newSearchParams.delete("error");
       navigate(`/login?${newSearchParams.toString()}`, { replace: true });
     }
   }, [errorParam, searchParams, navigate]);
@@ -44,12 +44,12 @@ const Login: React.FC = () => {
   // Google認証URLを取得してリダイレクト
   const handleGoogleLogin = async () => {
     try {
-      const response = await apiClient.get('/auth/google');
+      const response = await apiClient.get("/auth/google");
       // バックエンドから返されたGoogle認証URLにリダイレクト
       window.location.href = response.data.url;
     } catch (error) {
-      console.error('Googleログインエラー:', error);
-      alert('ログインに失敗しました');
+      console.error("Googleログインエラー:", error);
+      alert("ログインに失敗しました");
     }
   };
 
@@ -59,12 +59,12 @@ const Login: React.FC = () => {
     setFormError(null);
     setSubmitting(true);
     try {
-      const response = await apiClient.post('/auth/login', { email, password });
+      const response = await apiClient.post("/auth/login", { email, password });
       // セッションが確立されたのでユーザー状態を更新（useEffect が /dashboard へ遷移）
       login(response.data.user);
     } catch (err) {
-      console.error('ログインエラー:', err);
-      setFormError('メールアドレスまたはパスワードが正しくありません。');
+      console.error("ログインエラー:", err);
+      setFormError("メールアドレスまたはパスワードが正しくありません。");
     } finally {
       setSubmitting(false);
     }
@@ -78,9 +78,9 @@ const Login: React.FC = () => {
             AWS ECSデプロイ練習★
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            {AUTH_MODE === 'password'
-              ? 'メールアドレスとパスワードでログインしてください'
-              : 'Googleアカウントでログインしてください'}
+            {AUTH_MODE === "password"
+              ? "メールアドレスとパスワードでログインしてください"
+              : "Googleアカウントでログインしてください"}
           </p>
           {error && (
             <div className="mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">
@@ -89,10 +89,13 @@ const Login: React.FC = () => {
           )}
         </div>
 
-        {AUTH_MODE === 'password' ? (
+        {AUTH_MODE === "password" ? (
           <form className="mt-8 space-y-4" onSubmit={handlePasswordLogin}>
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700"
+              >
                 メールアドレス
               </label>
               <input
@@ -106,7 +109,10 @@ const Login: React.FC = () => {
               />
             </div>
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-gray-700"
+              >
                 パスワード
               </label>
               <input
@@ -129,7 +135,7 @@ const Login: React.FC = () => {
               disabled={submitting}
               className="w-full flex justify-center items-center px-4 py-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-60"
             >
-              {submitting ? 'ログイン中...' : 'ログイン'}
+              {submitting ? "ログイン中..." : "ログイン"}
             </button>
           </form>
         ) : (

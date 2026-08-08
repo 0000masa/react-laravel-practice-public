@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
-import apiClient from '../lib/api';
+import React, { useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
+import apiClient from "../lib/api";
 
 const Callback: React.FC = () => {
   const navigate = useNavigate();
@@ -12,25 +12,25 @@ const Callback: React.FC = () => {
     const handleCallback = async () => {
       try {
         // URLパラメータからエラーを確認
-        const error = searchParams.get('error');
+        const error = searchParams.get("error");
 
         if (error) {
           alert(decodeURIComponent(error));
-          navigate('/login');
+          navigate("/login");
           return;
         }
 
         // セッションで認証状態を確認（バックエンドでAuth::login()が実行済み）
-        const response = await apiClient.get('/auth/user');
-        
+        const response = await apiClient.get("/auth/user");
+
         // ユーザー情報を保存
         login(response.data.user);
-        
+
         // ダッシュボードへリダイレクト
-        navigate('/dashboard');
+        navigate("/dashboard");
       } catch (error) {
-        console.error('コールバック処理エラー:', error);
-        navigate('/login');
+        console.error("コールバック処理エラー:", error);
+        navigate("/login");
       }
     };
 
@@ -47,4 +47,3 @@ const Callback: React.FC = () => {
 };
 
 export default Callback;
-

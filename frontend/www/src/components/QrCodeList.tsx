@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import apiClient from '../lib/api';
+import React, { useEffect, useState } from "react";
+import apiClient from "../lib/api";
 
 interface QrCodeUser {
   id: number;
@@ -36,15 +36,15 @@ const QrCodeList: React.FC = () => {
   const fetchQrcodes = async (page: number) => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/qrcodes', {
+      const response = await apiClient.get("/qrcodes", {
         params: { page },
       });
       setQrcodes(response.data.qrcodes);
       setPagination(response.data.pagination);
       setError(null);
     } catch (err) {
-      console.error('QRコード一覧の取得に失敗しました:', err);
-      setError('QRコード一覧の取得に失敗しました');
+      console.error("QRコード一覧の取得に失敗しました:", err);
+      setError("QRコード一覧の取得に失敗しました");
     } finally {
       setLoading(false);
     }
@@ -60,9 +60,9 @@ const QrCodeList: React.FC = () => {
       fetchQrcodes(currentPage);
     };
 
-    window.addEventListener('qrcode-created', handleQrCodeCreated);
+    window.addEventListener("qrcode-created", handleQrCodeCreated);
     return () => {
-      window.removeEventListener('qrcode-created', handleQrCodeCreated);
+      window.removeEventListener("qrcode-created", handleQrCodeCreated);
     };
   }, [currentPage]);
 
@@ -92,7 +92,10 @@ const QrCodeList: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {qrcodes.map((qrcode) => (
-            <div key={qrcode.id} className="border border-gray-200 rounded-lg p-4">
+            <div
+              key={qrcode.id}
+              className="border border-gray-200 rounded-lg p-4"
+            >
               <div className="mb-2">
                 <img
                   src={qrcode.url}
@@ -105,10 +108,13 @@ const QrCodeList: React.FC = () => {
                 <p className="break-words">{qrcode.data}</p>
               </div>
               <div className="text-xs text-gray-500 mb-1">
-                作成者: {qrcode.user ? `${qrcode.user.name} (${qrcode.user.email})` : '不明'}
+                作成者:{" "}
+                {qrcode.user
+                  ? `${qrcode.user.name} (${qrcode.user.email})`
+                  : "不明"}
               </div>
               <div className="text-xs text-gray-500">
-                作成日時: {new Date(qrcode.created_at).toLocaleString('ja-JP')}
+                作成日時: {new Date(qrcode.created_at).toLocaleString("ja-JP")}
               </div>
               <div className="mt-2">
                 <a
@@ -128,7 +134,8 @@ const QrCodeList: React.FC = () => {
       {pagination && pagination.total > 0 && (
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-gray-600">
-            {pagination.from ?? 0} - {pagination.to ?? 0} / {pagination.total} 件
+            {pagination.from ?? 0} - {pagination.to ?? 0} / {pagination.total}{" "}
+            件
           </p>
           <div className="flex items-center gap-2">
             <button

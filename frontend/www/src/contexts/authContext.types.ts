@@ -1,4 +1,4 @@
-import { createContext } from 'react';
+import { createContext } from "react";
 
 // ユーザー情報の型定義
 export interface User {
@@ -17,5 +17,6 @@ export interface AuthContextType {
   checkAuth: () => Promise<void>;
 }
 
-export const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
+export const AuthContext = createContext<AuthContextType | undefined>(
+  undefined,
+);

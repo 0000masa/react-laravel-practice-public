@@ -72,6 +72,7 @@ npm run lint     # ESLint
 | 非同期処理・バッチ (SQS / 日次レポート) | `docs/app/` |
 | 監視 (Sentry / CloudWatch / X-Ray) | `docs/monitoring/` |
 | 設計判断の記録 | `docs/adr/` |
+| エディタ設定 (VS Code 推奨拡張 / Prettier) | [docs/local-dev/editor_setup.md](./docs/local-dev/editor_setup.md) |
 | アプリ実体 | `frontend/www/`（React）、`backend/www/`（Laravel） |
 | IaC | `terraform/stg`・`terraform/modules`（AWS 常設）、`terraform/pr-env`（AWS 検証環境 preview のルートモジュール）、`terraform/gcp`（GCP） |
 | ECS デプロイ定義 | `ecspresso/`（Jsonnet。preview は ecspresso 不使用で Terraform 管理） |

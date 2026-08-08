@@ -1,16 +1,18 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
-import { useAuth } from './hooks/useAuth';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import QrCodePage from './pages/QrCodePage';
-import MailPage from './pages/MailPage';
-import PostBenchPage from './pages/PostBenchPage';
-import Callback from './pages/Callback';
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import { useAuth } from "./hooks/useAuth";
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import QrCodePage from "./pages/QrCodePage";
+import MailPage from "./pages/MailPage";
+import PostBenchPage from "./pages/PostBenchPage";
+import Callback from "./pages/Callback";
 
 // 認証が必要なルートを保護するコンポーネント
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {

@@ -1,0 +1,24 @@
+{
+  // このリポジトリの開発に必要な拡張だけを列挙する。
+  // 個人の好み（UI 言語パック / AI アシスタント / スニペット等）は入れない。
+  "recommendations": [
+    // リモート開発: WSL + docker compose がローカル統合環境の正
+    "ms-vscode-remote.remote-wsl",
+    "ms-vscode-remote.remote-containers",
+
+    // フロントエンド (frontend/www: React 19 / Vite / TS / Tailwind)
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwindcss",
+
+    // バックエンド (backend/www: Laravel 12 / PHP 8.2)
+    "bmewburn.vscode-intelephense-client",
+
+    // インフラ (terraform/*.tf, ecspresso/*.jsonnet)
+    "hashicorp.terraform",
+    "grafana.vscode-jsonnet",
+
+    // ドキュメント (drawio/*.drawio)
+    "hediet.vscode-drawio"
+  ]
+}
