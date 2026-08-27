@@ -1,2 +1,7 @@
 logs/*
 !/logs/.gitkeep
+# === Terraform ===
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfplan
