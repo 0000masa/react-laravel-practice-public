@@ -29,6 +29,20 @@ on:
           - "true"
           - "false"
 
+  # bootstrap-env.yml から呼ぶための入口。workflow_call では choice が使えないため string で受ける。
+  # inputs.* は dispatch / call どちらで起動しても同じ名前で参照できる。
+  workflow_call:
+    inputs:
+      action:
+        type: string
+        required: true
+      target_env:
+        type: string
+        required: true
+      enable_nat_gateway:
+        type: string
+        required: true
+
 env:
   AWS_REGION: ap-northeast-1
 

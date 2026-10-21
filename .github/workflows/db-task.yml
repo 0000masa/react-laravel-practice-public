@@ -29,6 +29,24 @@ on:
         required: false
         default: ""
 
+  # bootstrap-env.yml から migrate / seed を呼ぶための入口（choice は使えないため string）。
+  workflow_call:
+    inputs:
+      target_env:
+        type: string
+        required: true
+      command_type:
+        type: string
+        required: true
+      shell_command:
+        type: string
+        required: false
+        default: ""
+      confirm_prod:
+        type: string
+        required: false
+        default: ""
+
 env:
   AWS_REGION: ap-northeast-1
   ECS_CLUSTER: practice-${{ inputs.target_env }}-cluster

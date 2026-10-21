@@ -1,0 +1,91 @@
+run-name: "bootstrap-env.yml | env=${{ inputs.target_env }} / confirm=${{ inputs.confirm_prod }}"
+
+# 常設環境のブートストラップ（用語は terraform/CONTEXT.md）。
+# apply → migrate → seed と、apply → フロントエンド配置を一括で実行し、ブラウザで使える状態にする。
+# 各処理は既存ワークフローを workflow_call で呼ぶだけで、ロジックはここに持たない。
+#
+#   validate ─ apply ─┬─ migrate ─ seed
+#                     └─ frontend
+#
+# 前提: tfvars の image_tag_laravel / image_tag_nginx のイメージが ECR に存在すること。
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "ブートストラップする環境"
+        type: choice
+        options:
+          - stg
+          - prod
+        required: true
+        default: stg
+      confirm_prod:
+        description: "prod 実行時は yes を入力"
+        required: false
+        default: ""
+
+# 同じ環境へのブートストラップが二重に走ると Terraform の state ロックや migrate が競合するため直列化する。
+concurrency:
+  group: bootstrap-env-${{ inputs.target_env }}
+  cancel-in-progress: false
+
+# 呼び出し先のジョブは OIDC で AWS ロールを引き受ける。
+# 呼び出し先は呼び出し元より強い権限を持てないので、ここで id-token: write を与えておく。
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # apply より前に落とす。apply 後に db-task 側の確認で落ちると「インフラだけできて DB が空」になるため。
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        env:
+          TARGET_ENV: ${{ inputs.target_env }}
+          CONFIRM_PROD: ${{ inputs.confirm_prod }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET_ENV" = "prod" ] && [ "$CONFIRM_PROD" != "yes" ]; then
+            echo "::error::prod 実行には confirm_prod=yes の入力が必須です"
+            exit 1
+          fi
+
+  # NAT は true 固定。NAT が無いと private サブネットの runner タスクが ECR / SSM に届かず migrate が起動できない。
+  # ブランチ制約は呼び出し先の "Fail on forbidden branch" が apply 前に判定する（github.ref は呼び出し元のもの）。
+  apply:
+    needs: validate
+    uses: ./.github/workflows/terraform-apply-plan.yml
+    with:
+      action: apply
+      target_env: ${{ inputs.target_env }}
+      enable_nat_gateway: "true"
+    secrets: inherit
+
+  migrate:
+    needs: apply
+    uses: ./.github/workflows/db-task.yml
+    with:
+      target_env: ${{ inputs.target_env }}
+      command_type: migrate
+      confirm_prod: ${{ inputs.confirm_prod }}
+    secrets: inherit
+
+  # テーブルが無いと seed できないため migrate の後。Seeder は冪等なので再実行しても重複しない。
+  seed:
+    needs: migrate
+    uses: ./.github/workflows/db-task.yml
+    with:
+      target_env: ${{ inputs.target_env }}
+      command_type: seed
+      confirm_prod: ${{ inputs.confirm_prod }}
+    secrets: inherit
+
+  # S3 配置は DB に依存しないので migrate と並列。
+  # stg は s3_force_destroy=true のため、destroy 後の apply ではバケットが空で作り直される。
+  frontend:
+    needs: apply
+    uses: ./.github/workflows/s3-deploy-frontend.yml
+    with:
+      target_env: ${{ inputs.target_env }}
+    secrets: inherit

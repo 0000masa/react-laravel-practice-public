@@ -12,6 +12,13 @@ on:
         required: true
         default: stg
 
+  # bootstrap-env.yml から呼ぶための入口（choice は使えないため string）。
+  workflow_call:
+    inputs:
+      target_env:
+        type: string
+        required: true
+
 env:
   AWS_REGION: ap-northeast-1
 
