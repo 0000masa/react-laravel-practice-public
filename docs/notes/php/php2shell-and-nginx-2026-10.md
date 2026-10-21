@@ -38,7 +38,36 @@ PHPのコア（C言語で書かれたランタイム）にあるメモリ破壊�
 
 ## リクエストの流れのどこで問題が起きるか
 
-![alt text](image.png)
+```mermaid
+flowchart TD
+    client["<b>ブラウザ／攻撃者</b><br/>細工したmultipart/form-dataのPOST<br/>（隠しフィールド＋セッションID）"]
+    nginx["<b>nginx</b><br/>HTTPを受け、fastcgi_passでphp-fpmへ転送<br/>（bodyはそのまま）"]
+
+    subgraph fpm["php-fpm（PHPの実行プロセス）"]
+        direction TB
+        s1["<b>① FastCGIでリクエストを受信</b><br/>Unixソケットまたは9000番ポートで待ち受け"]
+        s2["<b>② ランタイム（C言語）がbodyを解析</b><br/>$_POST・$_FILESを作りながら、進捗をセッションへ書き込む<br/><b>php2shellはここで起きると見られる（メモリ破壊）</b>"]
+        s3["<b>③ Zend EngineがPHPコードを実行</b><br/>オペコードに変換し、Zend VMが実行する"]
+        s4["<b>④ アプリのコード</b><br/>Laravel：public/index.php → ルーティング → controller<br/>WordPress：index.php → テーマ・プラグイン"]
+        s1 --> s2 --> s3 --> s4
+    end
+
+    client -- HTTP --> nginx
+    nginx -- FastCGI --> s1
+
+    noteNginx["nginx自体の脆弱性は別件<br/>→ 1.30.6／1.31.7へ更新"]
+    noteRuntime["<b>PHPコードが動く前</b><br/>アプリでは止められない<br/>対策：PHP本体の更新"]
+    noteApp["アプリ・プラグインの更新が効くのはここだけ<br/>php2shellには効かない"]
+
+    nginx -.- noteNginx
+    s2 -.- noteRuntime
+    s4 -.- noteApp
+
+    classDef danger fill:#fde8e8,stroke:#d33,stroke-width:2px,color:#000
+    classDef note fill:none,stroke:#999,stroke-dasharray:4 3,color:#555
+    class s2 danger
+    class noteNginx,noteRuntime,noteApp note
+```
 
 nginxはbodyを中身ごとphp-fpmへ渡すだけで、問題は②のC言語のランタイムで起きます。③④のPHPコードが1行も動く前なので、Laravel・WordPressやプラグインの更新では防げず、PHP本体の更新が必要です。
 
