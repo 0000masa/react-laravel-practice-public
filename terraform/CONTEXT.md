@@ -39,3 +39,7 @@ _Avoid_: 「PI を有効にすれば通知が来る」という理解（PI 自�
 **ログのホット層 / コールド層**:
 ECS のログ（ロググループ `/ecs/${project_name}`）を保持期間で2層に分ける考え方。**ホット層** = CloudWatch Logs に直近30日。Logs Insights で即検索でき、日常の障害調査に使う。**コールド層** = そこから Firehose で S3 に退避し、Glacier Instant Retrieval 中心に1年保管する監査・長期保管用。通常は読まず、必要時に Athena 等で読む。stg/prod 共有モジュール側の仕組みで、preview には無い。設計は [docs/monitoring/cloudwatch-logs-s3-archival.md](../docs/monitoring/cloudwatch-logs-s3-archival.md)、方式判断は [ADR 0011](../docs/adr/0011-cloudwatch-logs-archive-via-firehose.md)。
 _Avoid_: バックアップ（DB バックアップとは別物）、エクスポートタスク方式（`CreateExportTask` は不採用）
+
+**常設環境のブートストラップ**:
+常設環境（stg / prod）に対して apply → migrate → seed → フロントエンド配置を一括で行い、ブラウザで使える状態にすること。stg を destroy した後の再構築もこれに含む。NAT Gateway ありが前提（無いと private サブネットの runner タスクが起動できない）。
+_Avoid_: 立ち上げ（検証環境の作成と紛らわしい）、デプロイ（既存環境へのアプリ更新を指す ECR / ecspresso 系とは別物）
