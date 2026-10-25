@@ -75,6 +75,48 @@ http://archive.ubuntu.com/ubuntu/
 
 カタログが複数のファイルに分かれているのは、用途ごとに必要な情報だけを取れるようにするためです。dnfはまず目次（`repomd.xml`）を取り、そこに書かれた場所から必要な一覧のファイルを取ります。
 
+### URLの組み立て方：カタログには相対パスしか書いていない
+
+リポジトリの**URLが書いてあるのは`.repo`（設定ファイル）のほう**で、カタログではありません。カタログに書いてあるのは、**リポジトリの中での相対的な場所**だけです。dnfは次の3段階でURLを組み立てています。
+
+```
+① .repo（自分のサーバーにある）
+   baseurl=https://example.com/repo/          ← リポジトリの URL（ここだけが完全な URL）
+
+② repodata/repomd.xml（目次。リポジトリにある）
+   dnf は「baseurl + /repodata/repomd.xml」という決まった場所を見に行く
+   中身： <location href="repodata/xxxx-primary.xml.gz"/>   ← 相対パス
+
+③ repodata/xxxx-primary.xml.gz（カタログ本体。リポジトリにある）
+   中身： <name>php8.2-cli</name> … <location href="Packages/php8.2-cli-8.2.xx….rpm"/>  ← 相対パス
+```
+
+dnfは、①の`baseurl`に、②③に書かれた相対パスをつなげて、実際のURLを作ります。
+
+```
+https://example.com/repo/ + repodata/repomd.xml           → 目次のURL
+https://example.com/repo/ + repodata/xxxx-primary.xml.gz  → カタログ本体のURL
+https://example.com/repo/ + Packages/php8.2-cli-….rpm      → パッケージのURL
+```
+
+目次（`repomd.xml`）の場所は、どこにも書いてありません。**「`baseurl`の下の`repodata/repomd.xml`に置く」という決まり**になっているので、dnfはそこを見に行きます。だから`.repo`には、リポジトリの入口のURLを1つ書くだけで済みます。
+
+カタログを相対パスにしているのは、**ミラーのため**です。カタログに完全なURLを書いてしまうと、ミラー（同じ中身を複製したサーバー）ごとにカタログを書き換える必要があります。相対パスなら、同じカタログのファイルをそのままコピーするだけで、どのミラーでも使えます。どのミラーから取るかによって変わるのは、①の入口のURLだけです。
+
+aptも同じ形をしています。
+
+| 段階 | dnf | apt |
+| --- | --- | --- |
+| リポジトリのURL（完全なURL） | `.repo`の`baseurl`／`mirrorlist` | `/etc/apt/sources.list.d/*`に書かれたURL |
+| 目次 | `repodata/repomd.xml`（決まった場所） | `dists/noble/InRelease`（決まった場所） |
+| 目次に書いてあるもの | カタログ本体のファイルの相対パス | `main/binary-amd64/Packages.gz`などの相対パス |
+| カタログ本体に書いてあるもの | `location href="Packages/….rpm"` | `Filename: pool/main/n/nginx/nginx_….deb` |
+
+| ファイル | 中身 | URLについて書いてあること |
+| --- | --- | --- |
+| `.repo`（apt では `sources.list.d/*`） | どのリポジトリを使うか | リポジトリの**入口のURL** |
+| カタログ | どのパッケージがあるか | リポジトリの中での**相対パス**だけ |
+
 npmのレジストリには、このような「全部入りのカタログのファイル」はありません。`npm install express`のたびに、レジストリに「expressの情報をください」と1件ずつ問い合わせます（`https://registry.npmjs.org/express`にアクセスすると、そのJSONが返ってくる）。6章で「npmはカタログを手元に持たない」と書いているのはこのためです。
 
 ### リポジトリの存在はどこで知るのか
@@ -129,7 +171,10 @@ sudo dnf config-manager --set-enabled amazonlinux-source
 | --- | --- | --- |
 | 配布の場所 | 世界で1つの大きなレジストリに、みんなが**登録する** | 配布元ごとに**自分でリポジトリを立てる** |
 | 「全部のリスト」 | レジストリそのものが全部のリスト（`npm search`で探せる） | ない |
-| 新しい配布元のものを使うには | 何もしなくてよい（同じレジストリにある） | その配布元のリポジトリを`.repo`で足す |
+| 新しい配布元のものを使うとき：何を使いたいかの指定 | 必要（`npm install パッケージ名`。package.jsonに追加される） | 必要（`dnf install パッケージ名`。ファイルには残らない） |
+| 新しい配布元のものを使うとき：どこから取るかの設定 | **不要**（どの配布元のものも同じレジストリにある） | **必要**（その配布元のリポジトリを`.repo`で足し、公開鍵も入れる） |
+
+どちらも「何を使いたいか」は指定する必要があります。大きな違いは、dnf／aptでは**どこから取るか（配布元のリポジトリ）と、それを信用するか（公開鍵）**の設定も、自分で足す必要があることです。npmでは、配布元が誰であっても同じレジストリに登録されているので、この設定はいりません。
 
 人間向けに探せるWebサイトならあります（UbuntuのPPAを一覧できるLaunchpad、FedoraのCOPRなど）。ただし、どれもdnfやaptが自動で参照するファイルではありません。
 
@@ -574,6 +619,60 @@ dnfとaptは、カタログの**コピーを手元に保存**しています。n
 | npm | 手元に持たない。`npm install`のたびに**レジストリに直接聞きに行く** | 更新する必要がない |
 | apt | `/var/lib/apt/lists/` | **`apt update`を実行したときだけ**更新される |
 | dnf | `/var/cache/dnf/` | **期限（`metadata_expire`）が切れていれば、`dnf install`などのときに自動で更新される**。手動で更新するなら`dnf makecache` |
+
+#### 手元のどこに、どういう形で保存されるか
+
+カタログは複数のファイルの集まりなので（0章）、取ってきた後も**別々のファイルのまま**保存されます。並べ方はdnfとaptで違います。また、どちらも**取ってきたカタログを、速く探せる形に変換したファイル**を別に作っています。
+
+**dnf（Amazon Linux 2023）：リポジトリごとにディレクトリを分ける**
+
+```
+/var/cache/dnf/
+├── amazonlinux-xxxxxxxx/          ← リポジトリ「amazonlinux」の分
+│   ├── repodata/                  ← 取ってきたカタログを、ほぼそのままの形で保存
+│   │   ├── repomd.xml
+│   │   ├── xxxx-primary.xml.gz
+│   │   ├── xxxx-filelists.xml.gz
+│   │   └── xxxx-updateinfo.xml.gz
+│   └── packages/                  ← ダウンロードした .rpm（インストール後は基本的に消される）
+├── amazonlinux.solv               ← カタログを、速く探せる形に変換したもの
+├── amazonlinux-filenames.solvx
+├── kernel-livepatch-xxxxxxxx/     ← 別のリポジトリは別のディレクトリ
+└── kernel-livepatch.solv
+```
+
+- リポジトリの名前（`.repo`の`[amazonlinux]`）ごとにディレクトリが分かれ、その中の`repodata/`に、リポジトリにあったカタログのファイルがそのまま並ぶ。リポジトリ側の構成（0章の図）とほぼ同じ形
+- `.solv`は、XMLのカタログを依存関係の計算用の形式に変換したもの。`dnf install`のたびにXMLを読み直すと遅いので、変換したものを使う
+
+**apt（Ubuntu）：1つのディレクトリに、URLを元にした名前で並べる**
+
+```
+/var/lib/apt/lists/
+├── archive.ubuntu.com_ubuntu_dists_noble_InRelease
+├── archive.ubuntu.com_ubuntu_dists_noble_main_binary-amd64_Packages
+├── archive.ubuntu.com_ubuntu_dists_noble-updates_InRelease
+├── security.ubuntu.com_ubuntu_dists_noble-security_main_binary-amd64_Packages
+├── ppa.launchpadcontent.net_ondrej_php_ubuntu_dists_noble_InRelease
+└── …
+/var/cache/apt/
+├── pkgcache.bin                   ← カタログを、速く探せる形に変換したもの
+└── archives/                      ← ダウンロードした .deb（apt clean で消える）
+```
+
+- リポジトリごとにディレクトリを分けず、**リポジトリ上のURLの`/`を`_`に置き換えたもの**をファイル名にして、全リポジトリ分を1つのディレクトリに並べる。ファイル名を見れば、どのリポジトリのどのカタログかがわかる
+- `pkgcache.bin`が、dnfの`.solv`と同じ役割（変換して速く探せるようにしたもの）
+
+| | dnf | apt |
+| --- | --- | --- |
+| 取ってきたカタログ | `/var/cache/dnf/<リポジトリ名>-<ハッシュ>/repodata/` | `/var/lib/apt/lists/`（URLを元にしたファイル名） |
+| 分け方 | リポジトリごとにディレクトリ | 1つのディレクトリにまとめて、ファイル名で区別 |
+| 速く探すための変換版 | `/var/cache/dnf/*.solv` | `/var/cache/apt/pkgcache.bin` |
+| ダウンロードしたパッケージ | `/var/cache/dnf/…/packages/`（インストール後は基本的に消える） | `/var/cache/apt/archives/`（`apt clean`まで残る） |
+| 全部消して取り直す | `sudo dnf clean all` → `sudo dnf makecache` | `sudo rm -rf /var/lib/apt/lists/*` → `sudo apt update` |
+
+カタログもパッケージも、手元にあるのは**キャッシュ（取り直せるコピー）**です。消しても、次に取り直せば元に戻ります。一方、**消してはいけないのは台帳（`/var/lib/rpm/`、`/var/lib/dpkg/`）**です。台帳は「このサーバーに何が入っているか」の唯一の記録で、リポジトリには同じものがありません。
+
+ディレクトリ名のハッシュの部分や細かいファイル名は、環境によって違います。EC2で`ls /var/cache/dnf/`を実行すると、自分の環境の実物を確認できます。
 
 dnfやaptのインストールは、**手元のカタログにもとづいて**行われます。カタログに載っていないものは入れられず、カタログが古ければ古いバージョンが入ります。
 
